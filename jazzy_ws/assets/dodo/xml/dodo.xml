@@ -1,0 +1,113 @@
+<mujoco model="dodobot_v3">
+  <!-- ===================== -->
+  <!-- Global configuration -->
+  <!-- ===================== -->
+  <option timestep="0.002" gravity="0 0 -9.81"/>
+  <compiler angle="radian" coordinate="local"/>
+  <size njmax="2000" nconmax="500"/>
+
+  <!-- ===================== -->
+  <!-- Visual settings -->
+  <!-- ===================== -->
+  <visual>
+    <global offwidth="1920" offheight="1080"/>
+  </visual>
+
+  <!-- ===================== -->
+  <!-- Default properties -->
+  <!-- ===================== -->
+  <default>
+    <joint damping="0.0" armature="0.0"/>
+    <geom contype="1" conaffinity="1" friction="0.8 0.1 0.1"/>
+  </default>
+
+  <!-- ===================== -->
+  <!-- World -->
+  <!-- ===================== -->
+  <worldbody>
+
+    <!-- Ground -->
+    <geom name="floor" type="plane" pos="0 0 0" size="5 5 0.1"/>
+
+    <!-- ===================== -->
+    <!-- Robot base -->
+    <!-- ===================== -->
+    <body name="body_link" pos="0 0 0.15">
+
+      <inertial
+        pos="-0.0049584 0.034185 -0.011531"
+        mass="3.9306"
+        diaginertia="0.0051203 0.0079906 0.0096283"/>
+
+      <!-- body collision -->
+      <geom type="box" size="0.105 0.145 0.115"/>
+
+      <!-- ===================== -->
+      <!-- RIGHT ARM -->
+      <!-- ===================== -->
+      <body name="right_link_1" pos="0.066 0 -0.092">
+        <joint name="right_joint_1" type="hinge" axis="-1 0 0"
+               range="-0.3 0.3"/>
+
+        <body name="right_link_2" pos="-0.01705 0 -0.04009">
+          <joint name="right_joint_2" type="hinge" axis="0 -1 0"
+                 range="-1.5 1.5"/>
+
+          <body name="right_link_3" pos="0 -0.0504 -0.2">
+            <joint name="right_joint_3" type="hinge" axis="0 -1 0"
+                   range="-1.5 1.5"/>
+
+            <body name="right_link_4" pos="0 -0.03745 -0.2">
+              <joint name="right_joint_4" type="hinge" axis="0 -1 0"
+                     range="-1.5 1.5"/>
+
+              <geom type="box" size="0.047 0.018 0.031"/>
+            </body>
+          </body>
+        </body>
+      </body>
+
+      <!-- ===================== -->
+      <!-- LEFT ARM -->
+      <!-- ===================== -->
+      <body name="left_link_1" pos="-0.066 0 -0.092">
+        <joint name="left_joint_1" type="hinge" axis="-1 0 0"
+               range="-0.3 0.3"/>
+
+        <body name="left_link_2" pos="-0.01705 0.01295 -0.04009">
+          <joint name="left_joint_2" type="hinge" axis="0 -1 0"
+                 range="-1.5 1.5"/>
+
+          <body name="left_link_3" pos="0 0.03745 -0.2">
+            <joint name="left_joint_3" type="hinge" axis="0 -1 0"
+                   range="-1.5 1.5"/>
+
+            <body name="left_link_4" pos="0 0.03745 -0.2">
+              <joint name="left_joint_4" type="hinge" axis="0 -1 0"
+                     range="-1.5 1.5"/>
+
+              <geom type="box" size="0.047 0.018 0.031"/>
+            </body>
+          </body>
+        </body>
+      </body>
+
+    </body>
+  </worldbody>
+
+  <!-- ===================== -->
+  <!-- Actuators (torque control) -->
+  <!-- ===================== -->
+  <actuator>
+    <motor joint="right_joint_1" ctrlrange="-3 3"/>
+    <motor joint="right_joint_2" ctrlrange="-3 3"/>
+    <motor joint="right_joint_3" ctrlrange="-3 3"/>
+    <motor joint="right_joint_4" ctrlrange="-3 3"/>
+
+    <motor joint="left_joint_1" ctrlrange="-3 3"/>
+    <motor joint="left_joint_2" ctrlrange="-3 3"/>
+    <motor joint="left_joint_3" ctrlrange="-3 3"/>
+    <motor joint="left_joint_4" ctrlrange="-3 3"/>
+  </actuator>
+
+</mujoco>
