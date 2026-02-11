@@ -1,0 +1,35 @@
+# Dodo Environment Configuration
+# Update these values to match your PPO training configuration
+
+robot:
+  name: "dodo"
+  num_joints: 8
+
+  # Joint names (must match URDF and training)
+  joint_names:
+    - "right_joint_1"
+    - "right_joint_2"
+    - "right_joint_3"
+    - "right_joint_4"
+    - "left_joint_1"
+    - "left_joint_2"
+    - "left_joint_3"
+    - "left_joint_4"
+
+  # Default joint positions (nominal stance)
+  # TODO: Update with your robot's default pose
+  default_joint_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+observation:
+  # Observation space dimensions (must match training)
+  dimensions: 36  # 3 (lin_vel) + 3 (ang_vel) + 3 (gravity) + 3 (cmd) + 8 (joint_pos) + 8 (joint_vel) + 8 (prev_action)
+
+action:
+  # Action space configuration
+  dimensions: 8
+  scale: 0.5  # Action scaling factor
+
+control:
+  # Control loop parameters
+  decimation: 4  # Run policy every N ticks
+  publish_period_ms: 5
