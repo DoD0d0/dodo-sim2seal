@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import distro
 import rclpy
 from rclpy.node import Node
 import argparse
@@ -27,7 +28,7 @@ import psutil
 
 # Default values
 defaults = {
-    "isaac_sim_version": "6.0.0",
+    "isaac_sim_version": "5.1.0", # originally 6.0.0, but we use 5.1.0
     "isaac_sim_path": "",
     "use_internal_libs": True,
     "dds_type": "fastdds",
@@ -169,12 +170,28 @@ class IsaacSimLauncherNode(Node):
                 print("use_internal_libs parameter is not supported in Windows")
                 sys.exit(0)
             else:
-                os.environ["LD_LIBRARY_PATH"] = f"{os.getenv('LD_LIBRARY_PATH')}:{filepath_root}/exts/isaacsim.ros2.core/{args.ros_distro}/lib"
-                specific_path_to_remove = f"/opt/ros/{args.ros_distro}"
-                version_to_remove = "jazzy" if args.ros_distro == "humble" else "humble"
-                update_env_vars(version_to_remove, specific_path_to_remove, "LD_LIBRARY_PATH")
-                update_env_vars(version_to_remove, specific_path_to_remove, "PYTHONPATH")
-                update_env_vars(version_to_remove, specific_path_to_remove, "PATH")
+                # os.environ["LD_LIBRARY_PATH"] = f"{os.getenv('LD_LIBRARY_PATH')}:{filepath_root}/exts/isaacsim.ros2.core/{args.ros_distro}/lib"
+                # specific_path_to_remove = f"/opt/ros/{args.ros_distro}"
+                # version_to_remove = "jazzy" if args.ros_distro == "humble" else "humble"
+                # update_env_vars(version_to_remove, specific_path_to_remove, "LD_LIBRARY_PATH")
+                # update_env_vars(version_to_remove, specific_path_to_remove, "PYTHONPATH")
+                # update_env_vars(version_to_remove, specific_path_to_remove, "PATH")
+                # remove BOTH ros distros from env (at least /opt/ros/*)
+                # 1) externe ROS-Installationen rauswerfen
+                for distro in ["jazzy", "humble"]:
+                    update_env_vars(distro, f"/opt/ros/{distro}", "LD_LIBRARY_PATH")
+                    update_env_vars(distro, f"/opt/ros/{distro}", "PYTHONPATH")
+                    update_env_vars(distro, f"/opt/ros/{distro}", "PATH")
+
+                for k in ["AMENT_PREFIX_PATH", "CMAKE_PREFIX_PATH", "COLCON_PREFIX_PATH"]:
+                    os.environ.pop(k, None)
+
+                # 2) Isaac ROS2 Bridge libs hinzufügen (WICHTIG!)
+                bridge_lib = f"{filepath_root}/exts/isaacsim.ros2.bridge/{args.ros_distro}/lib"
+                ld = os.environ.get("LD_LIBRARY_PATH", "")
+                # prepend, damit Isaac diese libs zuerst nimmt
+                os.environ["LD_LIBRARY_PATH"] = f"{bridge_lib}:{ld}" if ld else bridge_lib
+
         
         # Apply path exclusions AFTER all other modifications
         if args.exclude_install_path:
