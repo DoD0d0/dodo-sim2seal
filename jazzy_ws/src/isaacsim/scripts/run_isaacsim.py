@@ -28,7 +28,7 @@ import psutil
 
 # Default values
 defaults = {
-    "isaac_sim_version": "5.1.0", # originally 6.0.0, but we use 5.1.0
+    "isaac_sim_version": "6.0.0", # originally 6.0.0, but we use 5.1.0
     "isaac_sim_path": "",
     "use_internal_libs": True,
     "dds_type": "fastdds",
@@ -177,21 +177,21 @@ class IsaacSimLauncherNode(Node):
                 # update_env_vars(version_to_remove, specific_path_to_remove, "PYTHONPATH")
                 # update_env_vars(version_to_remove, specific_path_to_remove, "PATH")
                 # remove BOTH ros distros from env (at least /opt/ros/*)
+                
                 # 1) externe ROS-Installationen rauswerfen
-                for distro in ["jazzy", "humble"]:
+                for distro in ["jazzy", "humble"]: # if using internal libs, we want to remove any externally installed ROS libs from environment variables, so we remove both jazzy and humble related paths to be safe (in case user has either one of them installed)
                     update_env_vars(distro, f"/opt/ros/{distro}", "LD_LIBRARY_PATH")
                     update_env_vars(distro, f"/opt/ros/{distro}", "PYTHONPATH")
                     update_env_vars(distro, f"/opt/ros/{distro}", "PATH")
 
-                for k in ["AMENT_PREFIX_PATH", "CMAKE_PREFIX_PATH", "COLCON_PREFIX_PATH"]:
+                for k in ["AMENT_PREFIX_PATH", "CMAKE_PREFIX_PATH", "COLCON_PREFIX_PATH"]: # these are commonly used env vars that point to ROS installations, we should remove them entirely to avoid any conflicts with internal libs, since they can contain multiple paths and it's hard to know which one is which.
                     os.environ.pop(k, None)
 
-                # 2) Isaac ROS2 Bridge libs hinzufügen (WICHTIG!)
-                bridge_lib = f"{filepath_root}/exts/isaacsim.ros2.bridge/{args.ros_distro}/lib"
+                # 2) Add Isaac ROS2 Bridge libs (IMPORTANT!)
+                bridge_lib = f"{filepath_root}/exts/isaacsim.ros2.bridge/{args.ros_distro}/lib" # .bridge instead of .core because we need the ROS2 bridge libs to run the sim as a ROS2 node, otherwise it will fail with missing library errors
                 ld = os.environ.get("LD_LIBRARY_PATH", "")
-                # prepend, damit Isaac diese libs zuerst nimmt
+                # prepend, so isaac sim's internal libs take precedence over any externally installed ROS libs
                 os.environ["LD_LIBRARY_PATH"] = f"{bridge_lib}:{ld}" if ld else bridge_lib
-
         
         # Apply path exclusions AFTER all other modifications
         if args.exclude_install_path:
@@ -255,10 +255,11 @@ class IsaacSimLauncherNode(Node):
 
             if args.custom_args!= "":
                 executable_command += f" {args.custom_args}"
-
+            
             if args.gui != "":
                 script_dir = os.path.dirname(__file__)
-                file_arg = os.path.join(script_dir, "open_isaacsim_stage.py") + f" --path {args.gui} {play_sim_on_start_arg}"
+                #file_arg = os.path.join(script_dir, "open_isaacsim_stage.py") + f" --path {args.gui} {play_sim_on_start_arg}"
+                file_arg = os.path.join(script_dir, "open_dodo-isaacsim_stage.py") + f" --path {args.gui} {play_sim_on_start_arg}"
                 executable_command += f" --exec '{file_arg}'"
 
             proc = subprocess.Popen(executable_command, shell=True, start_new_session=True)

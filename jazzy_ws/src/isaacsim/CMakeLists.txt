@@ -13,6 +13,7 @@ install(DIRECTORY
 install(PROGRAMS
   scripts/run_isaacsim.py
   scripts/open_isaacsim_stage.py
+  scripts/open_dodo-isaacsim_stage.py
   DESTINATION lib/${PROJECT_NAME}
 )
 ament_package()
