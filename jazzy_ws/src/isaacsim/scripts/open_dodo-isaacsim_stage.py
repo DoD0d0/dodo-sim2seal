@@ -31,7 +31,7 @@ from isaacsim.core.prims import Articulation
 import numpy as np
 
 ROBOT_PRIM = "/dodobot_v3" # change this to the prim path of your robot in the usd stage
-BASE_POS_INIT = np.array([0, 0, 2.6]) # change this to the initial position of your robot base in the stage
+BASE_POS_INIT = np.array([0, 0, 0.58]) # change this to the initial position of your robot base in the stage
 BASE_QUAT_INIT = np.array([1, 0, 0, 0]) # change this to the initial orientation of your robot base in the stage (in quaternion format [w, x, y, z])
 INIT_Q = {
         "left_joint_1": 0.0,
@@ -44,7 +44,7 @@ INIT_Q = {
         "right_joint_4": 0.3,
     } # this is in radiands but we need degrees
 
-INIT_Q = {k: np.deg2rad(v) for k, v in INIT_Q.items()} # convert initial joint positions to radians
+#INIT_Q = {k: np.deg2rad(v) for k, v in INIT_Q.items()} # convert initial joint positions to radians
 
 def main():
     parser = argparse.ArgumentParser()
@@ -88,25 +88,38 @@ async def open_stage_async(path: str, start_on_play: bool):
             carb.log_error(f"Failed to open stage {path}: {error}.")
         else:
             if timeline_interface is not None:
-                # await omni.kit.app.get_app().next_update_async()
-                # await omni.kit.app.get_app().next_update_async()
-                # timeline_interface.play()
+                await omni.kit.app.get_app().next_update_async()
+                await omni.kit.app.get_app().next_update_async()
+                # Set base pose via USD BEFORE physics starts
+                await set_dodo_base_pose_usd_async()
+                
+                # set joints BEFORE physics starts
+                await set_dodo_joints_async()
+
+                # Start physics
+                timeline_interface.play()
+
+                # Wait a few frames for physics engine to initialize
+                for _ in range(5):
+                    await omni.kit.app.get_app().next_update_async()
+
+                # Now set joints (physics is running, Articulation can initialize)
+                await set_dodo_joints_async()
+
                 # set_dodo_initial_pose() # set the initial pose of the robot after opening the stage
                 # carb.log_info("Stage loaded and simulation is playing.")
                 
-                await omni.kit.app.get_app().next_update_async()
-                await omni.kit.app.get_app().next_update_async()
+                # # await omni.kit.app.get_app().next_update_async()
+                # # await omni.kit.app.get_app().next_update_async()
 
-                # set base pose in USD BEFORE physics starts
-                await set_dodo_base_pose_usd_async()
+                # # set base pose in USD BEFORE physics starts
+                # await set_dodo_base_pose_usd_async()
 
-                timeline_interface.play()
+                # # set joints BEFORE physics starts
+                # await set_dodo_joints_async()
 
-                # wait until physics is actually running
-                for _ in range(10):
-                    await omni.kit.app.get_app().next_update_async()
-
-                await set_dodo_joints_async()
+                # # now start physics
+                # timeline_interface.play()
             pass
     result, _ = await omni.client.stat_async(path)
     if result == omni.client.Result.OK:

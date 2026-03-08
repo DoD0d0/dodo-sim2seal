@@ -15,7 +15,7 @@
 
 """
 Example launch command: 
-ros2 launch isaacsim run_isaacsim.launch.py version:=5.1.0 use_internal_libs:=true gui:=/home/liamb/Desktop/projects/dodo-sim2seal/jazzy_ws/assets/dodo/usd/dodo_simple.usd play_sim_on_start:=false ros_distro_var:=jazzy
+ros2 launch isaacsim run_isaacsim.launch.py version:=5.1.0 use_internal_libs:=true gui:=/home/aaron/dodo-sim2seal/jazzy_ws/assets/dodo/usd/dodo_simple.usd play_sim_on_start:=false ros_distro_var:=jazzy
 """
 
 from launch import LaunchDescription
@@ -29,7 +29,7 @@ from launch_ros.substitutions import FindPackageShare
 
 # Declare all launch arguments corresponding to the bash script options
 launch_args = [
-    DeclareLaunchArgument('version', default_value='6.0.0', description='Specify the version of Isaac Sim to use. Isaac Sim will be run from default install root folder for the specified version. Leave empty to use latest version of Isaac Sim.'),
+    DeclareLaunchArgument('version', default_value='5.1.0', description='Specify the version of Isaac Sim to use. Isaac Sim will be run from default install root folder for the specified version. Leave empty to use latest version of Isaac Sim.'),
     
     DeclareLaunchArgument('install_path', default_value='', description='If Isaac Sim is insalled in a non-default location, provide a specific path to Isaac Sim installation root folder. (If defined, "version" parameter will be ignored)'),
     
@@ -37,11 +37,11 @@ launch_args = [
     
     DeclareLaunchArgument('dds_type', default_value='fastdds', description='Set to "fastdds" or "cyclonedds" (Cyclone only supported for ROS 2 Humble and ROS 2 Jazzy) to run Isaac Sim with a specific dds type.'),
     
-    DeclareLaunchArgument('gui', default_value='/home/liamb/Desktop/projects/dodo-sim2seal/jazzy_ws/assets/dodo/usd/dodo_simple.usd', description='Provide the path to a usd file to open it when starting Isaac Sim in standard gui mode. If left empty, Isaac Sim will open an empty stage in standard gui mode.'),
+    DeclareLaunchArgument('gui', default_value='/home/aaron/dodo-sim2seal/jazzy_ws/assets/dodo/usd/dodo_simple.usd', description='Provide the path to a usd file to open it when starting Isaac Sim in standard gui mode. If left empty, Isaac Sim will open an empty stage in standard gui mode.'),
     
     DeclareLaunchArgument('standalone', default_value='', description='Provide the path to the python file to open it and start Isaac Sim in standalone workflow. If left empty, Isaac Sim will open an empty stage in standard Gui mode.'),
     
-    DeclareLaunchArgument('play_sim_on_start', default_value='false', description='If enabled and Isaac Sim will start playing the scene after it is loaded. (Only applicable when in standard gui mode and loading a scene)'),
+    DeclareLaunchArgument('play_sim_on_start', default_value='true', description='If enabled and Isaac Sim will start playing the scene after it is loaded. (Only applicable when in standard gui mode and loading a scene)'),
     
     DeclareLaunchArgument('ros_distro', default_value='jazzy', description='Provide ROS version to use. Only Humble and Jazzy is supported.'),
     

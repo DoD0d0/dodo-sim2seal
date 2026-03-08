@@ -28,13 +28,13 @@ import psutil
 
 # Default values
 defaults = {
-    "isaac_sim_version": "6.0.0", # originally 6.0.0, but we use 5.1.0
+    "isaac_sim_version": "5.1.0", # originally 6.0.0, but we use 5.1.0
     "isaac_sim_path": "",
     "use_internal_libs": True,
     "dds_type": "fastdds",
     "gui": "",
     "standalone": "",
-    "play_sim_on_start": False,
+    "play_sim_on_start": True,
     "ros_distro_var": "jazzy",
     "ros_installation_path": "",
     "headless": "",
@@ -148,7 +148,7 @@ class IsaacSimLauncherNode(Node):
                 if sys.platform == "win32":
                     filepath_root = os.path.join("C:", "isaacsim")
                 else:
-                    filepath_root = os.path.join(home_path, "isaacsim")
+                    filepath_root = os.path.join(home_path, "isaac-sim/isaac-sim-standalone-5.1.0-linux-x86_64")
             elif args.version == "4.2.0":
                 if sys.platform == "win32":
                     filepath_root = os.path.join(home_path, "AppData", "Local", "ov", "pkg", f"isaac-sim-{args.version}")
@@ -156,9 +156,9 @@ class IsaacSimLauncherNode(Node):
                     filepath_root = os.path.join(home_path, ".local", "share", "ov", "pkg", f"isaac-sim-{args.version}")
             elif version_ge(args.version, "2021.2.1") and not version_ge(args.version, "2023.1.2"):
                 if sys.platform == "win32":
-                    filepath_root = os.path.join(home_path, "AppData", "Local", "ov", "pkg", f"isaac_sim-{args.version}")
+                    filepath_root = os.path.join(home_path, "AppData", "Local", "ov", "pkg", f"isaac-sim-{args.version}")
                 else:
-                    filepath_root = os.path.join(home_path, ".local", "share", "ov", "pkg", f"isaac_sim-{args.version}")
+                    filepath_root = os.path.join(home_path, ".local", "share", "ov", "pkg", f"isaac-sim-{args.version}")
             else:
                 print(f"Unsupported Isaac Sim version: {args.version}")
                 sys.exit(0)
