@@ -5,20 +5,19 @@ robot:
   name: "dodo"
   num_joints: 8
 
-  # Joint names (must match URDF and training)
+  # Joint names in Genesis training order
   joint_names:
-    - "right_joint_1"
-    - "right_joint_2"
-    - "right_joint_3"
-    - "right_joint_4"
     - "left_joint_1"
+    - "right_joint_1"
     - "left_joint_2"
+    - "right_joint_2"
     - "left_joint_3"
+    - "right_joint_3"
     - "left_joint_4"
+    - "right_joint_4"
 
-  # Default joint positions (nominal stance)
-  # TODO: Update with your robot's default pose
-  default_joint_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  # Default joint positions (nominal standing stance, matches Genesis training)
+  default_joint_positions: [0.0, 0.0, 0.4, 0.4, -0.7, -0.7, 0.3, 0.3]
 
 observation:
   # Observation space dimensions (must match training)
