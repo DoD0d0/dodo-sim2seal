@@ -22,6 +22,12 @@ from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
+"""
+Example launch command:
+
+ros2 launch dodo_controller dodo_sim2sim.launch.py scene_path:=/home/liamb/Desktop/projects/dodo-sim2seal/jazzy_ws/assets/dodo/usd/dodo_simple_ROS.usd policy_path:=/home/liamb/Desktop/projects/dodo-sim2seal/jazzy_ws/model/genesis/standing_001/model_final.pt
+"""
+
 
 def generate_launch_description():
     """Generate launch description for Dodo sim2sim (Isaac Sim + controller)."""
@@ -52,7 +58,7 @@ def generate_launch_description():
     # Isaac Sim launcher node
     isaacsim_node = Node(
         package='isaacsim',
-        executable='isaac_sim_launcher',
+        executable='run_isaacsim.py', #isaac_sim_launcher
         name='isaac_sim',
         output='screen',
         parameters=[{
@@ -70,7 +76,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'policy_path': LaunchConfiguration('policy_path'),
-            'action_scale': 0.5,
+            'action_scale': 0.7,
             'decimation': 4,
             'publish_period_ms': 5,
             'use_sim_time': True,

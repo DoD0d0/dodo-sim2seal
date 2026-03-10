@@ -190,7 +190,7 @@ class IsaacSimLauncherNode(Node):
                 # 2) Add Isaac ROS2 Bridge libs (IMPORTANT!)
                 bridge_lib = f"{filepath_root}/exts/isaacsim.ros2.bridge/{args.ros_distro}/lib" # .bridge instead of .core because we need the ROS2 bridge libs to run the sim as a ROS2 node, otherwise it will fail with missing library errors
                 ld = os.environ.get("LD_LIBRARY_PATH", "")
-                # prepend, so isaac sim's internal libs take precedence over any externally installed ROS libs
+                # prepend, so isaac sim's internal libs take precedence over any externally installed ROSh libs
                 os.environ["LD_LIBRARY_PATH"] = f"{bridge_lib}:{ld}" if ld else bridge_lib
         
         # Apply path exclusions AFTER all other modifications
