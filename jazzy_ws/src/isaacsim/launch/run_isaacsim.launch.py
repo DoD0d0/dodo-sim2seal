@@ -24,7 +24,7 @@ from launch_ros.substitutions import FindPackageShare
 
 # Declare all launch arguments corresponding to the bash script options
 launch_args = [
-    DeclareLaunchArgument('version', default_value='6.0.0', description='Specify the version of Isaac Sim to use. Isaac Sim will be run from default install root folder for the specified version. Leave empty to use latest version of Isaac Sim.'),
+    DeclareLaunchArgument('version', default_value='5.1.0', description='Specify the version of Isaac Sim to use. Isaac Sim will be run from default install root folder for the specified version. Leave empty to use latest version of Isaac Sim.'),
     
     DeclareLaunchArgument('install_path', default_value='', description='If Isaac Sim is insalled in a non-default location, provide a specific path to Isaac Sim installation root folder. (If defined, "version" parameter will be ignored)'),
     
@@ -48,6 +48,8 @@ launch_args = [
 
     DeclareLaunchArgument('exclude_install_path', default_value='', description='Comma-separated list of installation paths to exclude from LD_LIBRARY_PATH, PYTHONPATH, and PATH environment variables.'),
 
+    DeclareLaunchArgument('stage_script', default_value='', description='Custom stage opener script path. If empty, uses the default open_isaacsim_stage.py.'),
+
 ]
 
 
@@ -69,7 +71,8 @@ def launch_setup(context):
             'ros_installation_path': LaunchConfiguration('ros_installation_path'),
             'headless': LaunchConfiguration('headless'),
             'custom_args': LaunchConfiguration('custom_args'),
-            'exclude_install_path': LaunchConfiguration('exclude_install_path')
+            'exclude_install_path': LaunchConfiguration('exclude_install_path'),
+            'stage_script': LaunchConfiguration('stage_script')
         }]
     )
     return [isaacsim_node]

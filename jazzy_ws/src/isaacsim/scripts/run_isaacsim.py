@@ -39,6 +39,8 @@ defaults = {
     "headless": "",
     "custom_args": "",
     "exclude_install_path": "",
+    "stage_script": "",
+    "stage_script_args": "",
 }
 
 # List to keep track of subprocesses
@@ -115,7 +117,9 @@ class IsaacSimLauncherNode(Node):
                 ('ros_installation_path', defaults['ros_installation_path']),
                 ('headless', defaults['headless']),
                 ('custom_args', defaults['custom_args']),
-                ('exclude_install_path', defaults['exclude_install_path'])
+                ('exclude_install_path', defaults['exclude_install_path']),
+                ('stage_script', defaults['stage_script']),
+                ('stage_script_args', defaults['stage_script_args']),
             ]
         )
         self.execute_launch()
@@ -134,6 +138,8 @@ class IsaacSimLauncherNode(Node):
         args.headless = self.get_parameter('headless').get_parameter_value().string_value
         args.custom_args = self.get_parameter('custom_args').get_parameter_value().string_value
         args.exclude_install_path = self.get_parameter('exclude_install_path').get_parameter_value().string_value
+        args.stage_script = self.get_parameter('stage_script').get_parameter_value().string_value
+        args.stage_script_args = self.get_parameter('stage_script_args').get_parameter_value().string_value
 
         filepath_root = ""
 
@@ -169,12 +175,20 @@ class IsaacSimLauncherNode(Node):
                 print("use_internal_libs parameter is not supported in Windows")
                 sys.exit(0)
             else:
-                os.environ["LD_LIBRARY_PATH"] = f"{os.getenv('LD_LIBRARY_PATH')}:{filepath_root}/exts/isaacsim.ros2.core/{args.ros_distro}/lib"
-                specific_path_to_remove = f"/opt/ros/{args.ros_distro}"
-                version_to_remove = "jazzy" if args.ros_distro == "humble" else "humble"
-                update_env_vars(version_to_remove, specific_path_to_remove, "LD_LIBRARY_PATH")
-                update_env_vars(version_to_remove, specific_path_to_remove, "PYTHONPATH")
-                update_env_vars(version_to_remove, specific_path_to_remove, "PATH")
+                # Remove external ROS paths for both distros
+                for distro in ["jazzy", "humble"]:
+                    update_env_vars(distro, f"/opt/ros/{distro}", "LD_LIBRARY_PATH")
+                    update_env_vars(distro, f"/opt/ros/{distro}", "PYTHONPATH")
+                    update_env_vars(distro, f"/opt/ros/{distro}", "PATH")
+
+                # Remove colcon/ament/cmake prefix paths to avoid conflicts
+                for k in ["AMENT_PREFIX_PATH", "CMAKE_PREFIX_PATH", "COLCON_PREFIX_PATH"]:
+                    os.environ.pop(k, None)
+
+                # Prepend Isaac Sim ROS2 bridge library path
+                bridge_lib = f"{filepath_root}/exts/isaacsim.ros2.bridge/{args.ros_distro}/lib"
+                ld = os.environ.get("LD_LIBRARY_PATH", "")
+                os.environ["LD_LIBRARY_PATH"] = f"{bridge_lib}:{ld}" if ld else bridge_lib
         
         # Apply path exclusions AFTER all other modifications
         if args.exclude_install_path:
@@ -241,7 +255,15 @@ class IsaacSimLauncherNode(Node):
 
             if args.gui != "":
                 script_dir = os.path.dirname(__file__)
-                file_arg = os.path.join(script_dir, "open_isaacsim_stage.py") + f" --path {args.gui} {play_sim_on_start_arg}"
+                if args.stage_script:
+                    stage_opener = args.stage_script
+                else:
+                    stage_opener = os.path.join(script_dir, "open_isaacsim_stage.py")
+                extra_stage_args = args.stage_script_args.strip()
+                if extra_stage_args:
+                    file_arg = f"{stage_opener} --path {args.gui} {play_sim_on_start_arg} {extra_stage_args}"
+                else:
+                    file_arg = f"{stage_opener} --path {args.gui} {play_sim_on_start_arg}"
                 executable_command += f" --exec '{file_arg}'"
 
             proc = subprocess.Popen(executable_command, shell=True, start_new_session=True)
