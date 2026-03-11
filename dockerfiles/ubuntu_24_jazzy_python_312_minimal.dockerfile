@@ -142,13 +142,14 @@ RUN python3 -m pip install --break-system-packages -U --ignore-installed \
 RUN python3 -m pip uninstall numpy -y || true
 RUN python3 -m pip install --break-system-packages --ignore-installed --upgrade pip
 RUN python3 -m pip install --break-system-packages --ignore-installed numpy pybind11 PyYAML
+RUN python3 -m pip install --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu
 
 # Fix paths for pybind11
 RUN python3 -m pip install --break-system-packages --ignore-installed "pybind11[global]"
 
 RUN mkdir -p ${ROS_ROOT}/src && \
     cd ${ROS_ROOT} && \
-    rosinstall_generator --deps --rosdistro ${ROS_DISTRO} rosidl_runtime_c rcutils rcl rmw tf2 tf2_msgs common_interfaces geometry_msgs nav_msgs std_msgs rosgraph_msgs sensor_msgs vision_msgs rclpy ros2topic ros2pkg ros2doctor ros2run ros2node ros_environment ackermann_msgs example_interfaces > ros2.${ROS_DISTRO}.${ROS_PKG}.rosinstall && \
+    rosinstall_generator --deps --rosdistro ${ROS_DISTRO} rosidl_runtime_c rcutils rcl rmw tf2 tf2_msgs common_interfaces geometry_msgs nav_msgs std_msgs rosgraph_msgs sensor_msgs vision_msgs rclpy ros2topic ros2pkg ros2doctor ros2run ros2node ros_environment ackermann_msgs example_interfaces message_filters > ros2.${ROS_DISTRO}.${ROS_PKG}.rosinstall && \
     cat ros2.${ROS_DISTRO}.${ROS_PKG}.rosinstall && \
     vcs import src < ros2.${ROS_DISTRO}.${ROS_PKG}.rosinstall
 
