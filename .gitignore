@@ -74,7 +74,5 @@ dist/
 # Docker build artifacts
 build_ws/
 
-# Large training artifacts (keep only exported policies)
-jazzy_ws/model/isaaclab/*/*/model_*.pt
-jazzy_ws/model/isaaclab/*/*/events.out.*
-jazzy_ws/model/isaaclab/*/*/params/*.pkl
+# Model files
+jazzy_ws/model/
