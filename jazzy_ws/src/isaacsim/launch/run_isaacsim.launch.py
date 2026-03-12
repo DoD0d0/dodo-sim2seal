@@ -49,6 +49,7 @@ launch_args = [
     DeclareLaunchArgument('exclude_install_path', default_value='', description='Comma-separated list of installation paths to exclude from LD_LIBRARY_PATH, PYTHONPATH, and PATH environment variables.'),
 
     DeclareLaunchArgument('stage_script', default_value='', description='Custom stage opener script path. If empty, uses the default open_isaacsim_stage.py.'),
+    DeclareLaunchArgument('stage_script_args', default_value='', description='Extra args forwarded to stage opener script (e.g. --base-height 0.45).'),
 
 ]
 
@@ -72,7 +73,8 @@ def launch_setup(context):
             'headless': LaunchConfiguration('headless'),
             'custom_args': LaunchConfiguration('custom_args'),
             'exclude_install_path': LaunchConfiguration('exclude_install_path'),
-            'stage_script': LaunchConfiguration('stage_script')
+            'stage_script': LaunchConfiguration('stage_script'),
+            'stage_script_args': LaunchConfiguration('stage_script_args'),
         }]
     )
     return [isaacsim_node]
