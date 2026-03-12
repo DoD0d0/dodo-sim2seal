@@ -23,7 +23,6 @@ import time
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import JointState, Imu
-from message_filters import Subscriber, TimeSynchronizer
 
 
 class DodoPolicyController(Node):
@@ -40,8 +39,8 @@ class DodoPolicyController(Node):
 
         # Declare and set parameters
         self.declare_parameter('publish_period_ms', 5)
-        self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.5)  # Scale factor for policy output
+        self.declare_parameter('policy_path', '/home/aaron/dodo-sim2seal/jazzy_ws/model/genesis/walking_aaron/walking_policy.pt')
+        self.declare_parameter('action_scale', 0.25)  # Scale factor for policy output (matches Genesis training)
         self.declare_parameter('decimation', 4)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
@@ -77,25 +76,19 @@ class DodoPolicyController(Node):
             'joint_command',
             qos_profile=sim_qos_profile)
 
-        # Setup synchronized subscribers for IMU and joint state data
-        self._imu_sub_filter = Subscriber(
-            self,
-            Imu,
-            'imu',
-            qos_profile=sim_qos_profile,
-        )
-        self._joint_states_sub_filter = Subscriber(
-            self,
+        # joint_states drives the control tick; IMU is stored separately (best-effort)
+        self._joint_states_sub = self.create_subscription(
             JointState,
             'joint_states',
+            self._joint_states_callback,
             qos_profile=sim_qos_profile,
         )
-        queue_size = 10
-        subscribers = [self._joint_states_sub_filter, self._imu_sub_filter]
-
-        # Time synchronizer to ensure joint state and IMU data are processed together
-        self.sync = TimeSynchronizer(subscribers, queue_size)
-        self.sync.registerCallback(self._tick)
+        self._imu_sub = self.create_subscription(
+            Imu,
+            'imu',
+            self._imu_callback,
+            qos_profile=sim_qos_profile,
+        )
 
         # Load neural network policy
         self.policy_path = self.get_parameter('policy_path').value
@@ -112,25 +105,29 @@ class DodoPolicyController(Node):
         self._lin_vel_b = np.zeros(3)  # Linear velocity in body frame
         self._dt = 0.0  # Time delta between ticks
 
-        # TODO: Update default joint positions for Dodo's nominal stance
-        # Currently set to zeros - should be updated based on your trained policy
-        self.default_pos = np.array([
-            0.0, 0.0, 0.0, 0.0,  # right leg (hip, knee, etc.)
-            0.0, 0.0, 0.0, 0.0   # left leg
-        ])
-
-        # Joint names in the order expected by the policy
-        # Based on joint_names_dodobot_v3.yaml (excluding empty string at index 0)
+        # Joint names in the order the Genesis policy was trained with
         self.joint_names = [
-            'right_joint_1',
-            'right_joint_2',
-            'right_joint_3',
-            'right_joint_4',
             'left_joint_1',
+            'right_joint_1',
             'left_joint_2',
+            'right_joint_2',
             'left_joint_3',
-            'left_joint_4'
+            'right_joint_3',
+            'left_joint_4',
+            'right_joint_4',
         ]
+
+        # Default (nominal standing) joint positions matching Genesis training config
+        self.default_pos = np.array([
+            0.0,   # left_joint_1
+            0.0,   # right_joint_1
+            0.4,   # left_joint_2
+            0.4,   # right_joint_2
+           -0.7,   # left_joint_3
+           -0.7,   # right_joint_3
+            0.3,   # left_joint_4
+            0.3,   # right_joint_4
+        ])
 
         self._logger.info("Initializing DodoPolicyController")
         self._logger.info(f"Policy path: {self.policy_path}")
@@ -141,7 +138,15 @@ class DodoPolicyController(Node):
         """Store the latest velocity command."""
         self._cmd_vel = msg
 
-    def _tick(self, joint_state: JointState, imu: Imu):
+    def _imu_callback(self, msg: Imu):
+        """Store the latest IMU message."""
+        self._imu = msg
+
+    def _joint_states_callback(self, msg: JointState):
+        """Trigger control tick on every joint state message."""
+        self._tick(msg)
+
+    def _tick(self, joint_state: JointState):
         """Process synchronized joint state and IMU data to generate robot commands.
 
         This method is called whenever new joint state and IMU data are available.
@@ -162,8 +167,8 @@ class DodoPolicyController(Node):
         self._dt = (now - self._last_tick_time)
         self._last_tick_time = now
 
-        # Run the control policy
-        self.forward(joint_state, imu)
+        # Run the control policy (use latest stored IMU)
+        self.forward(joint_state, self._imu)
 
         # Prepare and publish the joint command message
         self._joint_command.header.stamp = self.get_clock().now().to_msg()
@@ -280,7 +285,8 @@ class DodoPolicyController(Node):
         with torch.no_grad():
             obs = torch.from_numpy(obs).view(1, -1).float()
             action = self.policy(obs).detach().view(-1).numpy()
-        return action
+        # Clip to training range
+        return np.clip(action, -1.0, 1.0)
 
     def forward(self, joint_state: JointState, imu: Imu):
         """Process sensor data and compute control actions.
@@ -334,6 +340,16 @@ class DodoPolicyController(Node):
             # Load TorchScript model from buffer
             self.policy = torch.jit.load(buffer)
             self._logger.info(f"Successfully loaded policy from {self.policy_path}")
+            # Warm-start: run policy at nominal stance so _previous_action is
+            # near steady-state before the first real tick
+            action = np.zeros(8)
+            for _ in range(30):
+                obs = np.zeros(36)
+                obs[6:9] = np.array([0.0, 0.0, -1.0])  # gravity down, robot upright
+                obs[28:36] = action
+                action = np.clip(self._compute_action(obs), -1.0, 1.0)
+            self._previous_action = action.copy()
+            self._logger.info(f"Warm-started prev_action: {np.round(action, 3)}")
         except FileNotFoundError:
             self._logger.error(f"Policy file not found: {self.policy_path}")
             self._logger.warn("Please place your trained policy at the specified path")
