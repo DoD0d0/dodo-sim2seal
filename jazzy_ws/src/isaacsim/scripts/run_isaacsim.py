@@ -28,13 +28,13 @@ import psutil
 
 # Default values
 defaults = {
-    "isaac_sim_version": "6.0.0", # originally 6.0.0, but we use 5.1.0
+    "isaac_sim_version": "5.1.0", # originally 6.0.0, but we use 5.1.0
     "isaac_sim_path": "",
     "use_internal_libs": True,
     "dds_type": "fastdds",
     "gui": "",
     "standalone": "",
-    "play_sim_on_start": False,
+    "play_sim_on_start": True,
     "ros_distro_var": "jazzy",
     "ros_installation_path": "",
     "headless": "",
