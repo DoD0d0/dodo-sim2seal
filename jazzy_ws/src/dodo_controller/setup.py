@@ -13,15 +13,14 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
-        (os.path.join('share', package_name, 'policy'), glob('dodo_controller/policy/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Dodo Team',
     maintainer_email='dodo@example.com',
-    description='PPO policy controller for Dodo quadruped robot',
+    description='PPO policy controller for Dodo biped robot',
     license='Apache-2.0',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'dodo_policy_node = dodo_controller.dodo_policy_node:main',
