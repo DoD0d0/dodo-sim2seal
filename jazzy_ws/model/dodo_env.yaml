@@ -35,4 +35,4 @@ control:
   publish_period_ms: 5
 
 sim:
-  init_height: 0.575
+  init_height: 0.45
