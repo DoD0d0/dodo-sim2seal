@@ -99,15 +99,14 @@
   <!-- Actuators (torque control) -->
   <!-- ===================== -->
   <actuator>
+    <motor joint="left_joint_1"  ctrlrange="-3 3"/>
     <motor joint="right_joint_1" ctrlrange="-3 3"/>
+    <motor joint="left_joint_2"  ctrlrange="-3 3"/>
     <motor joint="right_joint_2" ctrlrange="-3 3"/>
+    <motor joint="left_joint_3"  ctrlrange="-3 3"/>
     <motor joint="right_joint_3" ctrlrange="-3 3"/>
+    <motor joint="left_joint_4"  ctrlrange="-3 3"/>
     <motor joint="right_joint_4" ctrlrange="-3 3"/>
-
-    <motor joint="left_joint_1" ctrlrange="-3 3"/>
-    <motor joint="left_joint_2" ctrlrange="-3 3"/>
-    <motor joint="left_joint_3" ctrlrange="-3 3"/>
-    <motor joint="left_joint_4" ctrlrange="-3 3"/>
   </actuator>
 
 </mujoco>
