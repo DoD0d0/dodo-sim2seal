@@ -213,10 +213,7 @@ class DodoPolicyController(Node):
         self._joint_command.name = self.joint_names
 
         # Compute final joint positions by adding scaled actions to default positions
-        if not USE_GENESIS:
-            action_pos = self.default_pos + self.action * self._action_scale
-        else:
-            action_pos = self.action * self._action_scale
+        action_pos = self.action * self._action_scale
         self._joint_command.position = action_pos.tolist()
         self._joint_command.velocity = np.zeros(len(self.joint_names)).tolist()
         self._joint_command.effort = np.zeros(len(self.joint_names)).tolist()
