@@ -38,13 +38,13 @@ def generate_launch_description():
 
     action_scale_arg = DeclareLaunchArgument(
         'action_scale',
-        default_value='0.5',
+        default_value='0.8',
         description='Scaling factor for policy output actions'
     )
 
     decimation_arg = DeclareLaunchArgument(
         'decimation',
-        default_value='4',
+        default_value='2',
         description='Run policy every N ticks (reduces computation)'
     )
 
