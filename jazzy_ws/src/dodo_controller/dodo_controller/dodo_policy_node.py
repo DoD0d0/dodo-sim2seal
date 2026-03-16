@@ -42,7 +42,7 @@ class DodoPolicyController(Node):
         # Declare and set parameters
         self.declare_parameter('publish_period_ms', 5)
         self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.8)  # Scale factor for policy output
+        self.declare_parameter('action_scale', 0.75)  # Scale factor for policy output
         self.declare_parameter('decimation', 2)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
@@ -213,7 +213,10 @@ class DodoPolicyController(Node):
         self._joint_command.name = self.joint_names
 
         # Compute final joint positions by adding scaled actions to default positions
-        action_pos = self.default_pos + self.action * self._action_scale
+        if not USE_GENESIS:
+            action_pos = self.default_pos + self.action * self._action_scale
+        else:
+            action_pos = self.action * self._action_scale
         self._joint_command.position = action_pos.tolist()
         self._joint_command.velocity = np.zeros(len(self.joint_names)).tolist()
         self._joint_command.effort = np.zeros(len(self.joint_names)).tolist()
@@ -352,9 +355,9 @@ class DodoPolicyController(Node):
         use_clock_obs = False # Set to True if you included a clock observation in your training
 
         observation_scales = { # TODO use the scales that you used during training for consistency.
-            'ang_vel': 1.0,  # Scale angular velocity if needed
+            'ang_vel': 0.25,  # Scale angular velocity if needed
             'dof_pos': 1.0,  # Scale joint positions if needed
-            'dof_vel': 0.1,  # Scale joint velocities if needed
+            'dof_vel': 0.05,  # Scale joint velocities if needed
             'lin_vel': 2.0,  # Scale command velocities if needed
         }
 
@@ -408,7 +411,7 @@ class DodoPolicyController(Node):
         obs[17:25] = joint_vel * observation_scales['dof_vel']
 
         # Store previous actions
-        obs[25:33] = self._previous_action
+        obs[25:33] = self._previous_action * observation_scales['dof_pos'] 
 
         # Velocity commands (3)
         cmd_vel = [
