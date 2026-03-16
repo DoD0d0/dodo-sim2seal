@@ -43,7 +43,7 @@ class DodoPolicyController(Node):
         # Declare and set parameters
         self.declare_parameter('publish_period_ms', 5)
         self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.8)  # Scale factor for policy output
+        self.declare_parameter('action_scale', 0.5)  # Scale factor for policy output
         self.declare_parameter('decimation', 2)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
