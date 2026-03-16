@@ -42,7 +42,7 @@ class DodoPolicyController(Node):
         # Declare and set parameters
         self.declare_parameter('publish_period_ms', 5)
         self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.75)  # Scale factor for policy output
+        self.declare_parameter('action_scale', 0.8)  # Scale factor for policy output
         self.declare_parameter('decimation', 2)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
@@ -62,7 +62,8 @@ class DodoPolicyController(Node):
         sim_qos_profile = rclpy.qos.QoSProfile(
             reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
             durability=rclpy.qos.DurabilityPolicy.VOLATILE,
-            history=rclpy.qos.HistoryPolicy.KEEP_ALL,
+            history=rclpy.qos.HistoryPolicy.KEEP_LAST, # was KEEP_ALL
+            depth=5,
         )
 
         # Create subscription for velocity commands
@@ -213,7 +214,7 @@ class DodoPolicyController(Node):
         self._joint_command.name = self.joint_names
 
         # Compute final joint positions by adding scaled actions to default positions
-        action_pos = self.action * self._action_scale
+        action_pos = self.default_pos + self.action * self._action_scale
         self._joint_command.position = action_pos.tolist()
         self._joint_command.velocity = np.zeros(len(self.joint_names)).tolist()
         self._joint_command.effort = np.zeros(len(self.joint_names)).tolist()
@@ -402,7 +403,7 @@ class DodoPolicyController(Node):
         joint_pos, joint_vel = self._extract_ordered_joint_state(joint_state)
 
         # Store joint positions 
-        obs[9:17] = joint_pos * observation_scales['dof_pos']
+        obs[9:17] = (joint_pos - self.default_pos) * observation_scales['dof_pos']
 
         # Store joint velocities
         obs[17:25] = joint_vel * observation_scales['dof_vel']
@@ -459,8 +460,9 @@ class DodoPolicyController(Node):
 
         # Run policy at reduced frequency (every _decimation ticks)
         if self._policy_counter % self._decimation == 0:
+            prev_action = self.action.copy()
             self.action = self._compute_action(obs)
-            self._previous_action = self.action.copy()
+            self._previous_action = prev_action
         self._policy_counter += 1
 
     def quat_to_rot_matrix(self, quat: np.ndarray) -> np.ndarray:

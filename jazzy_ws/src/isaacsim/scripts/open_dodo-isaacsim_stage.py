@@ -29,19 +29,19 @@ from isaacsim.core.utils.stage import get_current_stage
 from isaacsim.core.prims import XFormPrim, Articulation
 import numpy as np
 
-ROBOT_PRIM = "/dodobot_v3" # change this to the prim path of your robot in the usd stage
-BASE_POS_INIT = np.array([[0, 0, 0.59]], dtype=np.float32) # change this to the initial position of your robot base in the stage
-BASE_ORI_INIT = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32) # change this to the initial rotation position of robot in base stage
-INIT_Q = {
-        "left_joint_1": 0.0,
-        "right_joint_1": 0.0,
-        "left_joint_2": 0.4,
-        "right_joint_2": 0.4,
-        "left_joint_3": -0.7,
-        "right_joint_3": -0.7,
-        "left_joint_4": 0.3,
-        "right_joint_4": 0.3,
-    } # radiant
+# ROBOT_PRIM = "/dodobot_v3" # change this to the prim path of your robot in the usd stage
+# BASE_POS_INIT = np.array([[0, 0, 0.59]], dtype=np.float32) # change this to the initial position of your robot base in the stage
+# BASE_ORI_INIT = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32) # change this to the initial rotation position of robot in base stage
+# INIT_Q = {
+#         "left_joint_1": 0.0,
+#         "right_joint_1": 0.0,
+#         "left_joint_2": 0.4,
+#         "right_joint_2": 0.4,
+#         "left_joint_3": -0.7,
+#         "right_joint_3": -0.7,
+#         "left_joint_4": 0.3,
+#         "right_joint_4": 0.3,
+#     } # radiant
 
 def main():
     parser = argparse.ArgumentParser()
@@ -86,7 +86,7 @@ async def open_stage_async(path: str, start_on_play: bool):
         else:
             await omni.kit.app.get_app().next_update_async()
             await omni.kit.app.get_app().next_update_async()
-            set_dodo_base_position()
+            #set_dodo_base_position()
 
             if timeline_interface is not None:
                 # await omni.kit.app.get_app().next_update_async()
@@ -98,11 +98,11 @@ async def open_stage_async(path: str, start_on_play: bool):
 
                 timeline_interface.play()
 
-                await omni.kit.app.get_app().next_update_async()
+                #await omni.kit.app.get_app().next_update_async()
 
-                set_dodo_joint_positions()
+                #set_dodo_joint_positions()
 
-                await omni.kit.app.get_app().next_update_async()
+                #await omni.kit.app.get_app().next_update_async()
 
                 if not start_on_play:
                     timeline_interface.pause() # stop the timeline to set the initial pose of the robot before starting the simulation
@@ -134,33 +134,33 @@ async def open_stage_async(path: str, start_on_play: bool):
     else:
         carb.log_warn(f"Open stage: Could not open non-existent url '{path}'.")
 
-def set_dodo_base_position():
-    dodo_xform = XFormPrim(prim_paths_expr=ROBOT_PRIM)
-    dodo_xform.set_world_poses(BASE_POS_INIT, BASE_ORI_INIT)
+# def set_dodo_base_position():
+#     dodo_xform = XFormPrim(prim_paths_expr=ROBOT_PRIM)
+#     dodo_xform.set_world_poses(BASE_POS_INIT, BASE_ORI_INIT)
 
-def set_dodo_joint_positions():
-    robot = Articulation(prim_paths_expr=ROBOT_PRIM)
-    robot.initialize()
+# def set_dodo_joint_positions():
+#     robot = Articulation(prim_paths_expr=ROBOT_PRIM)
+#     robot.initialize()
 
-    joint_names = robot.dof_names
-    carb.log_info(f"Articulation DOFs: {joint_names}")
+#     joint_names = robot.dof_names
+#     carb.log_info(f"Articulation DOFs: {joint_names}")
 
-    q = np.zeros((1, len(joint_names)), dtype=np.float32)
-    for i, name in enumerate(joint_names):
-        if name in INIT_Q:
-            q[0, i] = INIT_Q[name]
-        else:
-            carb.log_warn(f"No initial value provided for joint '{name}', using 0.0")
+#     q = np.zeros((1, len(joint_names)), dtype=np.float32)
+#     for i, name in enumerate(joint_names):
+#         if name in INIT_Q:
+#             q[0, i] = INIT_Q[name]
+#         else:
+#             carb.log_warn(f"No initial value provided for joint '{name}', using 0.0")
 
-    qd = np.zeros_like(q)
+#     qd = np.zeros_like(q)
 
-    robot.set_joint_positions(q)
-    robot.set_joint_velocities(qd)
+#     robot.set_joint_positions(q)
+#     robot.set_joint_velocities(qd)
 
-    # nur für spätere resets nützlich
-    robot.set_joints_default_state(positions=q, velocities=qd)
+#     # nur für spätere resets nützlich
+#     robot.set_joints_default_state(positions=q, velocities=qd)
 
-    carb.log_info(f"Initial joint pose applied: {q}")
+#     carb.log_info(f"Initial joint pose applied: {q}")
 
     
 main()
