@@ -43,7 +43,7 @@ class DodoPolicyController(Node):
         # Declare and set parameters
         self.declare_parameter('publish_period_ms', 5)
         self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.7)  # Scale factor for policy output
+        self.declare_parameter('action_scale', 0.5)  # Scale factor for policy output
         self.declare_parameter('decimation', 2)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
@@ -223,8 +223,8 @@ class DodoPolicyController(Node):
         self._joint_command.name = self.joint_names
 
         # Compute final joint positions by adding scaled actions to default positions
-        #action_pos = self.action * self._action_scale + self.default_pos
-        action_pos = self.default_pos # TODO for evaluation just publish default pose
+        action_pos = self.action * self._action_scale + self.default_pos
+        #action_pos = self.default_pos # TODO for evaluation just publish default pose
 
         self._joint_command.position = action_pos.tolist()
         self._joint_command.velocity = np.zeros(len(self.joint_names)).tolist()
