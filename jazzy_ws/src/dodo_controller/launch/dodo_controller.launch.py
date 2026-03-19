@@ -38,7 +38,7 @@ def generate_launch_description():
 
     action_scale_arg = DeclareLaunchArgument(
         'action_scale',
-        default_value='0.5',
+        default_value='0.7',
         description='Scaling factor for policy output actions'
     )
 
