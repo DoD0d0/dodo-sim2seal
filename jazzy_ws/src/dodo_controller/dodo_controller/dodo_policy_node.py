@@ -223,7 +223,9 @@ class DodoPolicyController(Node):
         self._joint_command.name = self.joint_names
 
         # Compute final joint positions by adding scaled actions to default positions
-        action_pos = self.default_pos + self.action * self._action_scale
+        action_pos = self.action * self._action_scale + self.default_pos
+        #action_pos = self.default_pos # TODO for evaluation just publish default pose
+
         self._joint_command.position = action_pos.tolist()
         self._joint_command.velocity = np.zeros(len(self.joint_names)).tolist()
         self._joint_command.effort = np.zeros(len(self.joint_names)).tolist()
@@ -381,6 +383,7 @@ class DodoPolicyController(Node):
             odom.twist.twist.linear.y,
             odom.twist.twist.linear.z
         ])
+        #print(self._lin_vel_b)
 
         # Simple integration to estimate velocity
         #self._lin_vel_b = lin_acc_b * self._dt + self._lin_vel_b
@@ -408,6 +411,11 @@ class DodoPolicyController(Node):
         # Gravity direction (3)
         obs[6:9] = gravity_b
 
+
+        # obs[0:3] = 0.0
+        # obs[3:6] = 0.0
+        # obs[6:9] = [0.0, 0.0, -1.0]
+
         # Map joint states from message to our ordered arrays
         joint_pos, joint_vel = self._extract_ordered_joint_state(joint_state)
 
@@ -418,7 +426,7 @@ class DodoPolicyController(Node):
         obs[17:25] = joint_vel * observation_scales['dof_vel']
 
         # Store previous actions
-        obs[25:33] = self._previous_action * observation_scales['dof_pos'] 
+        obs[25:33] = self._previous_action #* observation_scales['dof_pos'] # we did not scale it again in genesis
 
         # Velocity commands (3)
         cmd_vel = [
@@ -469,9 +477,14 @@ class DodoPolicyController(Node):
 
         # Run policy at reduced frequency (every _decimation ticks)
         if self._policy_counter % self._decimation == 0:
-            prev_action = self.action.copy()
+            self._previous_action = self.action.copy()
             self.action = self._compute_action(obs)
-            self._previous_action = prev_action
+            self.action = np.clip(self.action, -10.0, 10.0)
+
+            if self._policy_counter < 20:
+                self._logger.info(f"obs[0:9]={obs[0:9]}")
+                self._logger.info(f"action={self.action}")
+
         self._policy_counter += 1
 
     def quat_to_rot_matrix(self, quat: np.ndarray) -> np.ndarray:
