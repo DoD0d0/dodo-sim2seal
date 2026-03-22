@@ -9,6 +9,19 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def _find_ws_root(start: str) -> str:
+    """Walk up the directory tree to find the root that contains model/isaaclab."""
+    path = os.path.abspath(start)
+    for _ in range(12):
+        if os.path.isdir(os.path.join(path, 'model', 'isaaclab')):
+            return path
+        parent = os.path.dirname(path)
+        if parent == path:
+            break
+        path = parent
+    return ''
+
+
 def resolve_policy_path(context):
     policy_path = LaunchConfiguration('policy_path').perform(context)
     policy_type = LaunchConfiguration('policy_type').perform(context)
@@ -17,11 +30,13 @@ def resolve_policy_path(context):
     if policy_path:
         resolved = policy_path
     else:
-        # Auto-discover from model directory
-        ws_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
-        pattern = os.path.join(ws_root, 'model', 'isaaclab', policy_type, '*', 'exported', 'policy.pt')
-        matches = sorted(glob.glob(pattern))
-        resolved = os.path.realpath(matches[-1]) if matches else ''
+        ws_root = _find_ws_root(os.path.dirname(os.path.abspath(__file__)))
+        if ws_root:
+            pattern = os.path.join(ws_root, 'model', 'isaaclab', policy_type, '*', 'exported', 'policy.pt')
+            matches = sorted(glob.glob(pattern))
+            resolved = os.path.realpath(matches[-1]) if matches else ''
+        else:
+            resolved = ''
 
     return [
         Node(
@@ -46,6 +61,7 @@ def resolve_policy_path(context):
                 'wait_for_cmd_vel': LaunchConfiguration('wait_for_cmd_vel'),
                 'cmd_vel_to_lin_vel_gain': LaunchConfiguration('cmd_vel_to_lin_vel_gain'),
                 'joint_signs': LaunchConfiguration('joint_signs'),
+                'imu_axis_remap': LaunchConfiguration('imu_axis_remap'),
                 'use_sim_time': True,
             }],
         )
@@ -117,6 +133,11 @@ def generate_launch_description():
             'joint_signs',
             default_value='[]',
             description='Optional 8-element list to multiply policy actions per joint (training joint order).',
+        ),
+        DeclareLaunchArgument(
+            'imu_axis_remap',
+            default_value='x,y,z',
+            description="Axis remap from IMU/body frame into policy frame, e.g. 'z,y,-x'.",
         ),
         OpaqueFunction(function=resolve_policy_path),
     ])

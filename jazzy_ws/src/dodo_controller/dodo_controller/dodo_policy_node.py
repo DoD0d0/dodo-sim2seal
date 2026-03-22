@@ -24,6 +24,7 @@ import time
 import numpy as np
 import rclpy
 import torch
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.exceptions import ParameterUninitializedException
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, Point
@@ -94,11 +95,20 @@ class DodoPolicyController(Node):
         self.declare_parameter('default_cmd_vel_y', 0.0)
         self.declare_parameter('default_cmd_ang_z', 0.0)
         self.declare_parameter('use_first_joint_state_as_default_pos', True)
-        self.declare_parameter('default_joint_pos', [])
+        self.declare_parameter(
+            'default_joint_pos',
+            [],
+            ParameterDescriptor(dynamic_typing=True),
+        )
         self.declare_parameter('use_steady_time_for_control', True)
         self.declare_parameter('wait_for_cmd_vel', True)
         self.declare_parameter('cmd_vel_to_lin_vel_gain', 0.35)
-        self.declare_parameter('joint_signs', [1.0] * 8)
+        self.declare_parameter(
+            'joint_signs',
+            [1.0] * 8,
+            ParameterDescriptor(dynamic_typing=True),
+        )
+        self.declare_parameter('imu_axis_remap', 'x,y,z')
         self.declare_parameter('log_first_policy_updates', 12)
         self.set_parameters(
             [rclpy.parameter.Parameter(
@@ -135,6 +145,8 @@ class DodoPolicyController(Node):
         )
         self._wait_for_cmd_vel = bool(self.get_parameter('wait_for_cmd_vel').value)
         self._cmd_vel_to_lin_vel_gain = float(self.get_parameter('cmd_vel_to_lin_vel_gain').value)
+        self._imu_axis_remap_spec = str(self.get_parameter('imu_axis_remap').value)
+        self._imu_axis_remap = self._parse_axis_remap(self._imu_axis_remap_spec)
         self._log_first_policy_updates = int(self.get_parameter('log_first_policy_updates').value)
         try:
             joint_signs_value = self.get_parameter('joint_signs').value
@@ -294,6 +306,7 @@ class DodoPolicyController(Node):
             f"cmd_vel_to_lin_vel_gain: {self._cmd_vel_to_lin_vel_gain}"
         )
         self._logger.info(f"joint_signs: {self._joint_signs.tolist()}")
+        self._logger.info(f"imu_axis_remap: {self._imu_axis_remap_spec}")
         self._logger.info(f"log_first_policy_updates: {self._log_first_policy_updates}")
 
     # --- Callbacks ---
@@ -302,6 +315,14 @@ class DodoPolicyController(Node):
         self._latest_imu = msg
         if not self._seen_imu:
             self._logger.info("First /imu received.")
+            self._logger.info(
+                f"IMU raw quat (w,x,y,z): [{msg.orientation.w:.4f}, {msg.orientation.x:.4f}, "
+                f"{msg.orientation.y:.4f}, {msg.orientation.z:.4f}]"
+            )
+            self._logger.info(
+                f"IMU linear_accel (x,y,z): [{msg.linear_acceleration.x:.3f}, "
+                f"{msg.linear_acceleration.y:.3f}, {msg.linear_acceleration.z:.3f}]"
+            )
             self._seen_imu = True
 
     def _joint_states_cb(self, msg: JointState):
@@ -456,9 +477,13 @@ class DodoPolicyController(Node):
             self._previous_action = self.action.copy()
             if self._policy_update_count < self._log_first_policy_updates:
                 sim_action = self.action * self._joint_signs
+                # Full policy input vector.
                 self._logger.info(f"obs:    {np.round(obs, 3).tolist()}")
+                # Network output before clip and rate limits.
                 self._logger.info(f"raw:    {np.round(raw_action, 3).tolist()} (max_abs={raw_action_max:.3f})")
+                # Filtered action in policy joint frame.
                 self._logger.info(f"action(policy): {np.round(self.action, 3).tolist()}")
+                # Action remapped to simulator joint frame.
                 self._logger.info(f"action(sim):    {np.round(sim_action, 3).tolist()}")
             self._policy_update_count += 1
         self._policy_counter += 1
@@ -516,10 +541,20 @@ class DodoPolicyController(Node):
             quat = np.array([imu.orientation.w, imu.orientation.x,
                              imu.orientation.y, imu.orientation.z])
             R_BI = self.quat_to_rot_matrix(quat).T
-            gravity_b = R_BI @ np.array([0.0, 0.0, -1.0])
-            ang_vel = np.array([imu.angular_velocity.x,
-                                imu.angular_velocity.y,
-                                imu.angular_velocity.z])
+            # Isaac Sim USD stage is Y-up: gravity in stage world frame is [0, -1, 0].
+            # R_BI uses this Y-up convention, so [0, -1, 0] correctly projects
+            # world gravity into the body frame expected by the policy.
+            gravity_b = R_BI @ np.array([0.0, -1.0, 0.0])
+            ang_vel_raw = np.array([imu.angular_velocity.x,
+                                    imu.angular_velocity.y,
+                                    imu.angular_velocity.z])
+            # Convert angular velocity from Y-up IMU frame to Z-up training frame
+            # via R_x(+90°): [x, y, z] -> [x, -z, y]
+            ang_vel = np.array([ang_vel_raw[0], -ang_vel_raw[2], ang_vel_raw[1]],
+                               dtype=np.float32)
+            # Remap IMU/body axes into the policy body frame.
+            gravity_b = self._imu_axis_remap @ gravity_b
+            ang_vel = self._imu_axis_remap @ ang_vel
 
         # If no odometry is available, keep a conservative fallback.
         if not self._has_odom:
@@ -573,13 +608,19 @@ class DodoPolicyController(Node):
             self._warned_no_odom = True
 
         obs = np.zeros(36)
+        # Base linear velocity.
         obs[0:3] = self._lin_vel_b
+        # Base angular velocity.
         obs[3:6] = ang_vel
+        # Gravity direction in body frame.
         obs[6:9] = gravity_b
+        # Commanded velocity target.
         obs[9:12] = cmd
-        # Convert simulator joint states into policy frame using joint_signs.
+        # Joint position relative to default pose.
         obs[12:20] = (jpos - self.default_pos) * self._joint_signs
+        # Joint velocity in policy frame.
         obs[20:28] = jvel * self._joint_signs
+        # Previous policy action.
         obs[28:36] = self._previous_action
         return obs
 
@@ -616,12 +657,19 @@ class DodoPolicyController(Node):
         jpos, jvel = self._get_joint_state(joint_state)
 
         obs = np.zeros(191)
+        # Gravity direction in body frame.
         obs[0:3] = gravity_b
+        # Jump target in body frame.
         obs[3:6] = self._jump_target
+        # Time remaining before takeoff.
         obs[6] = self._jump_time_to_go
+        # Joint position relative to default pose.
         obs[7:15] = (jpos - self.default_pos) * self._joint_signs
+        # Joint velocity in policy frame.
         obs[15:23] = jvel * self._joint_signs
+        # Previous policy action.
         obs[23:31] = self._previous_action
+        # Local terrain height samples.
         obs[31:191] = self._height_scan
         return obs
 
@@ -649,12 +697,52 @@ class DodoPolicyController(Node):
             (q[1, 3] - q[2, 0], q[2, 3] + q[1, 0], 1.0 - q[1, 1] - q[2, 2]),
         ), dtype=np.float64)
 
+    def _parse_axis_remap(self, spec: str) -> np.ndarray:
+        """Parse axis remap like 'x,y,z' or 'z,y,-x'."""
+        axes = [token.strip().lower() for token in spec.split(',')]
+        if len(axes) != 3:
+            self._logger.warn(
+                f"imu_axis_remap='{spec}' is invalid. Falling back to identity remap."
+            )
+            return np.eye(3, dtype=np.float32)
+
+        matrix = np.zeros((3, 3), dtype=np.float32)
+        used_axes: set[int] = set()
+        axis_map = {'x': 0, 'y': 1, 'z': 2}
+
+        for row, token in enumerate(axes):
+            sign = -1.0 if token.startswith('-') else 1.0
+            axis_name = token[1:] if token.startswith('-') else token
+            if axis_name not in axis_map:
+                self._logger.warn(
+                    f"imu_axis_remap='{spec}' contains unknown axis '{token}'. "
+                    "Falling back to identity remap."
+                )
+                return np.eye(3, dtype=np.float32)
+            axis_idx = axis_map[axis_name]
+            if axis_idx in used_axes:
+                self._logger.warn(
+                    f"imu_axis_remap='{spec}' repeats axis '{axis_name}'. "
+                    "Falling back to identity remap."
+                )
+                return np.eye(3, dtype=np.float32)
+            used_axes.add(axis_idx)
+            matrix[row, axis_idx] = sign
+
+        return matrix
+
     def _resolve_policy_path(self, explicit_path: str, policy_type: str) -> str:
         """Find policy file: use explicit path if given, otherwise auto-discover."""
         if explicit_path:
             return explicit_path
 
-        ws_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
+        # Walk up from __file__ to find the workspace root containing model/isaaclab.
+        # This works whether running from source or from colcon install tree.
+        ws_root = self._find_ws_root(os.path.dirname(os.path.abspath(__file__)))
+        if not ws_root:
+            self._logger.error("Could not locate workspace root (model/isaaclab not found in any parent dir)")
+            return ''
+
         pattern = os.path.join(ws_root, 'model', 'isaaclab', policy_type, '*', 'exported', 'policy.pt')
         matches = sorted(glob.glob(pattern))
         if matches:
@@ -663,6 +751,19 @@ class DodoPolicyController(Node):
             return resolved
 
         self._logger.error(f"No policy found for type '{policy_type}' at {pattern}")
+        return ''
+
+    @staticmethod
+    def _find_ws_root(start: str) -> str:
+        """Walk up the directory tree to find the root that contains model/isaaclab."""
+        path = os.path.abspath(start)
+        for _ in range(12):
+            if os.path.isdir(os.path.join(path, 'model', 'isaaclab')):
+                return path
+            parent = os.path.dirname(path)
+            if parent == path:
+                break
+            path = parent
         return ''
 
     def load_policy(self):

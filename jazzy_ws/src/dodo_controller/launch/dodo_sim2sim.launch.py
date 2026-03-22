@@ -9,6 +9,19 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def _find_ws_root(start: str) -> str:
+    """Walk up the directory tree to find the root that contains model/isaaclab."""
+    path = os.path.abspath(start)
+    for _ in range(12):
+        if os.path.isdir(os.path.join(path, 'model', 'isaaclab')):
+            return path
+        parent = os.path.dirname(path)
+        if parent == path:
+            break
+        path = parent
+    return ''
+
+
 def launch_setup(context):
     policy_path = LaunchConfiguration('policy_path').perform(context)
     policy_type = LaunchConfiguration('policy_type').perform(context)
@@ -33,13 +46,17 @@ def launch_setup(context):
     wait_for_cmd_vel = LaunchConfiguration('wait_for_cmd_vel').perform(context)
     cmd_vel_to_lin_vel_gain = float(LaunchConfiguration('cmd_vel_to_lin_vel_gain').perform(context))
     joint_signs = LaunchConfiguration('joint_signs').perform(context)
+    imu_axis_remap = LaunchConfiguration('imu_axis_remap').perform(context)
 
     # Auto-discover policy if not given
     if not policy_path:
-        ws_root = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
-        pattern = os.path.join(ws_root, 'model', 'isaaclab', policy_type, '*', 'exported', 'policy.pt')
-        matches = sorted(glob.glob(pattern))
-        policy_path = os.path.realpath(matches[-1]) if matches else ''
+        ws_root = _find_ws_root(os.path.dirname(os.path.abspath(__file__)))
+        if ws_root:
+            pattern = os.path.join(ws_root, 'model', 'isaaclab', policy_type, '*', 'exported', 'policy.pt')
+            matches = sorted(glob.glob(pattern))
+            policy_path = os.path.realpath(matches[-1]) if matches else ''
+        else:
+            policy_path = ''
 
     # Resolve open_dodo_stage.py path
     isaacsim_scripts = os.path.join(
@@ -92,6 +109,7 @@ def launch_setup(context):
             'wait_for_cmd_vel': wait_for_cmd_vel,
             'cmd_vel_to_lin_vel_gain': cmd_vel_to_lin_vel_gain,
             'joint_signs': joint_signs,
+            'imu_axis_remap': imu_axis_remap,
             'use_sim_time': True,
         }]
     )
@@ -172,6 +190,11 @@ def generate_launch_description():
             'joint_signs',
             default_value='[]',
             description='Optional 8-element list to multiply policy actions per joint (training joint order).',
+        ),
+        DeclareLaunchArgument(
+            'imu_axis_remap',
+            default_value='x,y,z',
+            description="Axis remap from IMU/body frame into policy frame, e.g. 'z,y,-x'.",
         ),
         OpaqueFunction(function=launch_setup),
     ])
