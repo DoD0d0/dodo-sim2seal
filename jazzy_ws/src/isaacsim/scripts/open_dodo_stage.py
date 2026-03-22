@@ -1,6 +1,7 @@
 """Open a Dodo USD stage in Isaac Sim, set initial robot height and joint positions."""
 
 import argparse
+import ast
 import numpy as np
 import carb
 import omni.usd
@@ -9,6 +10,7 @@ import omni.kit.app
 import omni.kit.async_engine
 import omni.timeline
 from isaacsim.core.prims import XFormPrim, Articulation
+from pxr import UsdGeom
 
 
 # Default for current deployment USD (can be overridden via --base-height)
@@ -18,7 +20,7 @@ DEFAULT_JOINT_DAMPING = 2.0
 BASE_ORI = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
 
 # Training uses all-zero default joint positions
-INIT_Q = {
+ZERO_Q = {
     "left_joint_1": 0.0,
     "right_joint_1": 0.0,
     "left_joint_2": 0.0,
@@ -28,6 +30,57 @@ INIT_Q = {
     "left_joint_4": 0.0,
     "right_joint_4": 0.0,
 }
+
+JOINT_NAME_ORDER = [
+    "left_joint_1",
+    "right_joint_1",
+    "left_joint_2",
+    "right_joint_2",
+    "left_joint_3",
+    "right_joint_3",
+    "left_joint_4",
+    "right_joint_4",
+]
+
+JOINT_PRESETS = {
+    "zero": ZERO_Q,
+    "stand": {
+        "left_joint_1":  0.0,
+        "right_joint_1": 0.0,
+        "left_joint_2":  0.7,
+        "right_joint_2": 0.7,
+        "left_joint_3": -1.3,
+        "right_joint_3": -1.3,
+        "left_joint_4":  0.6,
+        "right_joint_4": 0.6,
+    },
+    "crouch_a": {
+        "left_joint_1": 0.0,
+        "right_joint_1": 0.0,
+        "left_joint_2": 0.10,
+        "right_joint_2": 0.10,
+        "left_joint_3": -0.18,
+        "right_joint_3": -0.18,
+        "left_joint_4": 0.08,
+        "right_joint_4": 0.08,
+    },
+    "crouch_b": {
+        "left_joint_1": 0.0,
+        "right_joint_1": 0.0,
+        "left_joint_2": -0.10,
+        "right_joint_2": -0.10,
+        "left_joint_3": 0.18,
+        "right_joint_3": 0.18,
+        "left_joint_4": -0.08,
+        "right_joint_4": -0.08,
+    },
+}
+
+ROOT_ASSET_SCOPE_PATHS = (
+    "/visuals",
+    "/colliders",
+    "/meshes",
+)
 
 
 def main():
@@ -41,6 +94,10 @@ def main():
                         help="Joint position stiffness (PD P gain) for all DOFs")
     parser.add_argument("--joint-damping", type=float, default=DEFAULT_JOINT_DAMPING,
                         help="Joint damping (PD D gain) for all DOFs")
+    parser.add_argument("--joint-preset", type=str, default="zero",
+                        help="Initial joint preset: zero, crouch_a, crouch_b")
+    parser.add_argument("--joint-pos", type=str, default="",
+                        help="Explicit joint pose override as 8 values in Isaac order")
     parser.add_argument("--start-on-play", action="store_true",
                         help="Keep simulation running after loading")
     options = parser.parse_args()
@@ -53,8 +110,43 @@ def main():
             options.base_height,
             options.joint_stiffness,
             options.joint_damping,
+            _resolve_init_q(options.joint_preset, options.joint_pos),
         )
     )
+
+
+def _resolve_init_q(joint_preset: str, joint_pos: str) -> dict[str, float]:
+    if joint_pos:
+        values = _parse_joint_pos_list(joint_pos)
+        if values is not None:
+            return {
+                name: value for name, value in zip(JOINT_NAME_ORDER, values)
+            }
+        carb.log_warn(
+            f"Failed to parse --joint-pos='{joint_pos}'. Falling back to preset '{joint_preset}'."
+        )
+
+    preset = JOINT_PRESETS.get(joint_preset, ZERO_Q)
+    if joint_preset not in JOINT_PRESETS:
+        carb.log_warn(
+            f"Unknown joint preset '{joint_preset}'. Falling back to 'zero'."
+        )
+    return dict(preset)
+
+
+def _parse_joint_pos_list(spec: str):
+    try:
+        parsed = ast.literal_eval(spec)
+    except (ValueError, SyntaxError):
+        parsed = None
+
+    if not isinstance(parsed, (list, tuple)) or len(parsed) != 8:
+        return None
+
+    try:
+        return [float(v) for v in parsed]
+    except (TypeError, ValueError):
+        return None
 
 
 def _apply_pd_gains(robot: Articulation, dof_count: int, kp: float, kd: float):
@@ -87,6 +179,29 @@ def _apply_pd_gains(robot: Articulation, dof_count: int, kp: float, kd: float):
     carb.log_warn("Failed to apply PD gains via set_gains; keeping existing gains.")
 
 
+def _hide_root_asset_scopes():
+    """Hide root-level source geometry scopes so only articulated instances are visible."""
+    stage = omni.usd.get_context().get_stage()
+    if stage is None:
+        carb.log_warn("No USD stage available to hide root asset scopes.")
+        return
+
+    for prim_path in ROOT_ASSET_SCOPE_PATHS:
+        prim = stage.GetPrimAtPath(prim_path)
+        if not prim.IsValid():
+            continue
+
+        imageable = UsdGeom.Imageable(prim)
+        if not imageable:
+            carb.log_warn(f"Root asset scope is not imageable: {prim_path}")
+            continue
+
+        visibility_attr = imageable.GetVisibilityAttr()
+        if visibility_attr.Get() != UsdGeom.Tokens.invisible:
+            visibility_attr.Set(UsdGeom.Tokens.invisible)
+            carb.log_info(f"Forced {prim_path} visibility to invisible.")
+
+
 async def open_stage_async(
     path: str,
     robot_prim: str,
@@ -94,6 +209,7 @@ async def open_stage_async(
     base_height: float,
     joint_stiffness: float,
     joint_damping: float,
+    init_q: dict[str, float],
 ):
     timeline = omni.timeline.get_timeline_interface()
 
@@ -110,6 +226,8 @@ async def open_stage_async(
 
     await omni.kit.app.get_app().next_update_async()
     await omni.kit.app.get_app().next_update_async()
+
+    _hide_root_asset_scopes()
 
     # Set base position before play
     base_pos = np.array([[0.0, 0.0, base_height]], dtype=np.float32)
@@ -129,8 +247,8 @@ async def open_stage_async(
 
     q = np.zeros((1, len(dof_names)), dtype=np.float32)
     for i, name in enumerate(dof_names):
-        if name in INIT_Q:
-            q[0, i] = INIT_Q[name]
+        if name in init_q:
+            q[0, i] = init_q[name]
         else:
             carb.log_warn(f"No init value for joint '{name}', using 0.0")
 
