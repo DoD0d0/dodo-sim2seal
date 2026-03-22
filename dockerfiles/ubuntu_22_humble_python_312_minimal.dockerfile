@@ -116,7 +116,7 @@ RUN apt update && apt install -y \
     libjpeg-dev \
     python3-pyqt5.qtwebengine
 
-RUN pip3 install setuptools==70.0.0
+RUN pip3 install setuptools==68.1.2
 
 RUN apt update && apt install -y \
   python3-pip \

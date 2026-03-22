@@ -117,7 +117,7 @@ RUN apt update && apt install -y \
   libpython3-dev \
   liblttng-ust-dev
 
-RUN pip3 install --break-system-packages setuptools==70.0.0
+RUN pip3 install --break-system-packages setuptools==68.1.2
 
 # Install the correct version of empy that is compatible with ROS 2 jazzy
 # Uninstall any existing empy first, then install version 3.3.4 specifically
@@ -143,6 +143,7 @@ RUN python3 -m pip uninstall numpy -y || true
 RUN python3 -m pip install --break-system-packages --ignore-installed --upgrade pip
 RUN python3 -m pip install --break-system-packages --ignore-installed numpy pybind11 PyYAML
 RUN python3 -m pip install --break-system-packages torch --index-url https://download.pytorch.org/whl/cpu
+RUN python3 -m pip install --break-system-packages psutil
 
 # Fix paths for pybind11
 RUN python3 -m pip install --break-system-packages --ignore-installed "pybind11[global]"
