@@ -43,7 +43,7 @@ class DodoPolicyController(Node):
         # Declare and set parameters
         self.declare_parameter('publish_period_ms', 5)
         self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.5)  # Scale factor for policy output
+        self.declare_parameter('action_scale', 0.7)  # Scale factor for policy output
         self.declare_parameter('decimation', 2)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
@@ -127,7 +127,7 @@ class DodoPolicyController(Node):
         self.action = np.zeros(8)
 
         # set up initial cmd velocity for testing
-        self._cmd_vel.linear.x = 0.3 
+        self._cmd_vel.linear.x = 0.0 
         self._cmd_vel.linear.y = 0.0
         self._cmd_vel.angular.z = 0.0
 
@@ -145,12 +145,12 @@ class DodoPolicyController(Node):
         ]) if not USE_GENESIS else np.array([
             0.0, # left_joint_1 (hip)
             0.0, # right_joint_1 (hip)
-            0.4, # left_joint_2 (thigh)
-            0.4, # right_joint_2 (thigh)
-            -0.7, # left_joint_3 (knee)
-            -0.7, # right_joint_3 (knee)
-            0.3, # left_joint_4 (foot)
-            0.3  # right_joint_4 (foot)
+            0.6, # left_joint_2 (thigh)
+            0.6, # right_joint_2 (thigh)
+            -1.4, # left_joint_3 (knee)
+            -1.4, # right_joint_3 (knee)
+            0.8, # left_joint_4 (foot)
+            0.8  # right_joint_4 (foot)
         ])
 
         # Joint names in the order expected by the policy
@@ -165,14 +165,14 @@ class DodoPolicyController(Node):
             'left_joint_3',
             'left_joint_4'
         ] if not USE_GENESIS else [
-            'left_joint_1',
-            'right_joint_1',
-            'left_joint_2',
-            'right_joint_2',
-            'left_joint_3',
-            'right_joint_3',
-            'left_joint_4',
-            'right_joint_4',
+            'hip_left',
+            'hip_right',
+            'upper_leg_left',
+            'upper_leg_right',
+            'lower_leg_left',
+            'lower_leg_right',
+            'foot_left',            
+            'foot_right',
         ]
 
         self._joint_state_indices = None
