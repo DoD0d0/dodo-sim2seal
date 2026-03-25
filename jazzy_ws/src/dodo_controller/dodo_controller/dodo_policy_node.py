@@ -43,7 +43,7 @@ class DodoPolicyController(Node):
         # Declare and set parameters
         self.declare_parameter('publish_period_ms', 5)
         self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.7)  # Scale factor for policy output
+        self.declare_parameter('action_scale', 0.1)  # Scale factor for policy output
         self.declare_parameter('decimation', 2)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
@@ -127,7 +127,7 @@ class DodoPolicyController(Node):
         self.action = np.zeros(8)
 
         # set up initial cmd velocity for testing
-        self._cmd_vel.linear.x = 0.0
+        self._cmd_vel.linear.x = 0.3
         self._cmd_vel.linear.y = 0.0
         self._cmd_vel.angular.z = 0.0
 
@@ -493,6 +493,7 @@ class DodoPolicyController(Node):
         if self._policy_counter % self._decimation == 0:
             self._previous_action = self.action.copy()
             self.action = self._compute_action(obs)
+            #self.action = np.zeros(8) # TODO for testing just output zeros. Remove this line to use actual policy output.
             self.action = np.clip(self.action, -1.5, 1.5)
 
             if self._policy_counter < 20:
