@@ -127,7 +127,7 @@ class DodoPolicyController(Node):
         self.action = np.zeros(8)
 
         # set up initial cmd velocity for testing
-        self._cmd_vel.linear.x = 0.0 
+        self._cmd_vel.linear.x = 0.0
         self._cmd_vel.linear.y = 0.0
         self._cmd_vel.angular.z = 0.0
 
@@ -421,6 +421,7 @@ class DodoPolicyController(Node):
 
         # Store joint positions 
         obs[9:17] = (joint_pos - self.default_pos) * observation_scales['dof_pos']
+        #obs[9:17] = 0.0
 
         # Store joint velocities
         obs[17:25] = joint_vel * observation_scales['dof_vel']
@@ -444,6 +445,19 @@ class DodoPolicyController(Node):
                 np.sin(2.0 * np.pi * phase),
                 np.cos(2.0 * np.pi * phase)
             ]
+
+        
+        # #self._logger.info(f"Computed observation: {obs}")
+        # if not np.isfinite(obs).all():
+        #     self._logger.error(f"Non-finite obs detected: {obs}")
+        #     self._logger.error(f"finite mask: {np.isfinite(obs)}")
+
+        # self._logger.info(f"obs raw: {obs}")
+
+        self._logger.info(f"joint_pos abs: {joint_pos}")
+        self._logger.info(f"joint_pos rel: {(joint_pos - self.default_pos)}")
+
+        obs = np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
 
         return obs
 
