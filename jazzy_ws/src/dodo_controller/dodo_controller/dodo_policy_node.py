@@ -44,7 +44,7 @@ class DodoPolicyController(Node):
         # Declare and set parameters
         self.declare_parameter('publish_period_ms', 20) # dt * decimation
         self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.05)  # Scale factor for policy output
+        self.declare_parameter('action_scale', 0.25)  # Scale factor for policy output
         self.declare_parameter('decimation', 4)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
@@ -126,7 +126,7 @@ class DodoPolicyController(Node):
         self._dt = 0.0  # Time delta between ticks
 
         # set up initial cmd velocity for testing
-        self._cmd_vel.linear.x = 0.0
+        self._cmd_vel.linear.x = 0.5
         self._cmd_vel.linear.y = 0.0
         self._cmd_vel.angular.z = 0.0
 
@@ -476,17 +476,19 @@ class DodoPolicyController(Node):
 
         obs = np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
 
-        if self._policy_counter % 10 == 0:
-            self._logger.info("---- POLICY DEBUG ----")
-            self._logger.info(f"cmd raw: {[self._cmd_vel.linear.x, self._cmd_vel.linear.y, self._cmd_vel.angular.z]}")
-            self._logger.info(f"lin vel obs raw: {self._lin_vel_b}")
-            self._logger.info(f"ang vel raw: {self._ang_vel_b}")
-            self._logger.info(f"gravity_b: {gravity_b}")
-            self._logger.info(f"joint_pos: {joint_pos}")
-            self._logger.info(f"joint_rel: {joint_pos - self.default_pos}")
-            self._logger.info(f"joint_vel: {joint_vel}")
-            self._logger.info(f"prev_action: {self._previous_action}")
-            self._logger.info(f"obs min/max: {obs.min():.3f}, {obs.max():.3f}")
+        # if self._policy_counter % 25 == 0:
+        #     self._logger.info("---- POLICY DEBUG ----")
+        #     self._logger.info(f"cmd raw: {[self._cmd_vel.linear.x, self._cmd_vel.linear.y, self._cmd_vel.angular.z]}")
+        #     self._logger.info(f"lin vel obs raw: {self._lin_vel_b}")
+        #     self._logger.info(f"lin vel obs rotated: {lin_vel_rotated}")
+        #     self._logger.info(f"ang vel raw: {self._ang_vel_b}")
+        #     self._logger.info(f"ang vel obs rotated: {ang_vel_rotated}")
+        #     self._logger.info(f"gravity_b: {gravity_b}")
+        #     self._logger.info(f"joint_pos: {joint_pos}")
+        #     self._logger.info(f"joint_rel: {joint_pos - self.default_pos}")
+        #     self._logger.info(f"joint_vel: {joint_vel}")
+        #     self._logger.info(f"prev_action: {self._previous_action}")
+        #     self._logger.info(f"obs min/max: {obs.min():.3f}, {obs.max():.3f}")
 
         return obs
 
