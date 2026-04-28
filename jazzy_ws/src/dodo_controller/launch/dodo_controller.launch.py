@@ -38,19 +38,19 @@ def generate_launch_description():
 
     action_scale_arg = DeclareLaunchArgument(
         'action_scale',
-        default_value='0.1',
+        default_value='0.05',
         description='Scaling factor for policy output actions'
     )
 
     decimation_arg = DeclareLaunchArgument(
         'decimation',
-        default_value='2',
+        default_value='4',
         description='Run policy every N ticks (reduces computation)'
     )
 
     publish_period_ms_arg = DeclareLaunchArgument(
         'publish_period_ms',
-        default_value='5',
+        default_value='20',
         description='Publishing period in milliseconds'
     )
 

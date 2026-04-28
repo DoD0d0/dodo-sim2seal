@@ -27,6 +27,7 @@ from nav_msgs.msg import Odometry
 from message_filters import Subscriber, TimeSynchronizer
 
 USE_GENESIS = True # Set to True if you are using a policy trained in genesis, False if using a policy trained in Isaac Sim. 
+ROBOT_TYPE = "go2" # or dodo
 
 class DodoPolicyController(Node):
     """PPO policy controller for Dodo quadruped robot.
@@ -41,10 +42,10 @@ class DodoPolicyController(Node):
         super().__init__('dodo_policy_controller')
 
         # Declare and set parameters
-        self.declare_parameter('publish_period_ms', 5)
+        self.declare_parameter('publish_period_ms', 20) # dt * decimation
         self.declare_parameter('policy_path', 'policy/dodo_policy.pt')
-        self.declare_parameter('action_scale', 0.1)  # Scale factor for policy output
-        self.declare_parameter('decimation', 2)  # Run policy every N ticks
+        self.declare_parameter('action_scale', 0.05)  # Scale factor for policy output
+        self.declare_parameter('decimation', 4)  # Run policy every N ticks
         self.set_parameters(
             [rclpy.parameter.Parameter(
                 'use_sim_time',
@@ -119,63 +120,75 @@ class DodoPolicyController(Node):
         self._joint_command = JointState()
         self._cmd_vel = Twist()
         #self._imu = Imu()
-        self._previous_action = np.zeros(8)  # 8 joints for Dodo
         self._policy_counter = 0
         self._last_tick_time = self.get_clock().now().nanoseconds * 1e-9
         self._lin_vel_b = np.zeros(3)  # Linear velocity in body frame
         self._dt = 0.0  # Time delta between ticks
-        self.action = np.zeros(8)
 
         # set up initial cmd velocity for testing
-        self._cmd_vel.linear.x = 0.3
+        self._cmd_vel.linear.x = 0.0
         self._cmd_vel.linear.y = 0.0
         self._cmd_vel.angular.z = 0.0
 
         # TODO: Update default joint positions for Dodo's nominal stance
         # Currently set to zeros - should be updated based on your trained policy
         self.default_pos = np.array([
-            0.0, # right_joint_1 (hip)
-            0.0, # right_joint_2 (thigh)
-            0.0, # right_joint_3 (knee)
-            0.0, # right_joint_4 (foot)
-            0.0, # left_joint_1 (hip)
-            0.0, # left_joint_2 (thigh)
-            0.0, # left_joint_3 (knee)
-            0.0  # left_joint_4 (foot)
-        ]) if not USE_GENESIS else np.array([
-            0.0, # left_joint_1 (hip)
-            0.0, # right_joint_1 (hip)
-            0.6, # left_joint_2 (thigh)
-            0.6, # right_joint_2 (thigh)
-            -1.4, # left_joint_3 (knee)
-            -1.4, # right_joint_3 (knee)
-            0.8, # left_joint_4 (foot)
-            0.8  # right_joint_4 (foot)
+            0.0, # hip_right (hip)
+            0.45, # upper_leg_right (thigh)
+            -1.0, # lower_leg_right (knee)
+            0.0, # foot_right (foot)
+            0.55, # hip_left (hip)
+            0.45, # upper_leg_left (thigh)
+            -1.0, # lower_leg_left (knee)
+            0.55  # foot_left (foot)
+        ]) if ROBOT_TYPE == "dodo" else np.array([
+            0.1, # FL_hip_joint
+            0.8, # FL_thigh_joint
+            -1.5, # FL_calf_joint
+            -0.1, # FR_hip_joint
+            0.8, # FR_thigh_joint
+            -1.5, # FR_calf_joint
+            0.1, # RL_hip_joint
+            1.0, # RL_thigh_joint
+            -1.5, # RL_calf_joint
+            -0.1, # RR_hip_joint
+            1.0,  # RR_thigh_joint
+            -1.5 # RR_calf_joint
         ])
 
         # Joint names in the order expected by the policy
-        # Based on joint_names_dodobot_v3.yaml (excluding empty string at index 0)
-        self.joint_names = [
-            'right_joint_1',
-            'right_joint_2',
-            'right_joint_3',
-            'right_joint_4',
-            'left_joint_1',
-            'left_joint_2',
-            'left_joint_3',
-            'left_joint_4'
-        ] if not USE_GENESIS else [
-            'hip_left',
+        # Based on joint_names that were used during training (e.g. in Isaac Sim or Genesis) - we will have to remap those later to the order coming from the JointState messages, which may differ.
+        self.joint_names_train = [
             'hip_right',
-            'upper_leg_left',
             'upper_leg_right',
-            'lower_leg_left',
             'lower_leg_right',
-            'foot_left',            
             'foot_right',
+            'hip_left',
+            'upper_leg_left',
+            'lower_leg_left',
+            'foot_left',
+        ] if ROBOT_TYPE == "dodo" else [
+            'FL_hip_joint',
+            'FL_thigh_joint',
+            'FL_calf_joint',
+            'FR_hip_joint',
+            'FR_thigh_joint',
+            'FR_calf_joint',
+            'RL_hip_joint',
+            'RL_thigh_joint',
+            'RL_calf_joint',
+            'RR_hip_joint',
+            'RR_thigh_joint',
+            'RR_calf_joint'
         ]
 
-        self._joint_state_indices = None
+        self._previous_action = np.zeros(len(self.joint_names_train))
+        self.action = np.zeros(len(self.joint_names_train))
+
+        self.joint_names_sim = None
+
+        self._sim_to_train_idx = None   # read JointState in train/policy order
+        self._train_to_sim_idx = None   # publish action/default_pos in sim order
         self._joint_state_name_tuple = None
 
         self._logger.info("Initializing DodoPolicyController")
@@ -206,7 +219,7 @@ class DodoPolicyController(Node):
             self._episode_time = 0.0
             self._lin_vel_b = np.zeros(3)
             self._policy_counter = 0
-            self._previous_action = np.zeros(8)
+            self._previous_action = np.zeros(len(self.joint_names_train))
             self._last_tick_time = now
             return
 
@@ -220,15 +233,19 @@ class DodoPolicyController(Node):
 
         # Prepare and publish the joint command message
         self._joint_command.header.stamp = self.get_clock().now().to_msg()
-        self._joint_command.name = self.joint_names
 
         # Compute final joint positions by adding scaled actions to default positions
-        action_pos = self.action * self._action_scale + self.default_pos
+        action_pos = np.clip(self.action, -10.0, 10.0) * self._action_scale + self.default_pos
         #action_pos = self.default_pos # TODO for evaluation just publish default pose
 
-        self._joint_command.position = action_pos.tolist()
-        self._joint_command.velocity = np.zeros(len(self.joint_names)).tolist()
-        self._joint_command.effort = np.zeros(len(self.joint_names)).tolist()
+        # convert to IsaacSim order for execution
+        target_pos_sim = self._to_sim_order(action_pos)
+
+        self._joint_command.name = self.joint_names_sim
+        self._joint_command.position = target_pos_sim.tolist()
+        self._joint_command.velocity = np.zeros(len(self.joint_names_sim)).tolist()
+        self._joint_command.effort = np.zeros(len(self.joint_names_sim)).tolist()
+
         self._joint_publisher.publish(self._joint_command)
 
     def _compute_observation(self, joint_state: JointState, imu: Imu):
@@ -301,16 +318,8 @@ class DodoPolicyController(Node):
         ]
         obs[9:12] = np.array(cmd_vel)
 
-        # Joint states (8 positions + 8 velocities)
-        current_joint_pos = np.zeros(8)
-        current_joint_vel = np.zeros(8)
-
         # Map joint states from message to our ordered arrays
-        for i, name in enumerate(self.joint_names):
-            if name in joint_state.name:
-                idx = joint_state.name.index(name)
-                current_joint_pos[i] = joint_state.position[idx]
-                current_joint_vel[i] = joint_state.velocity[idx]
+        current_joint_pos, current_joint_vel = self._extract_joint_state_train_order(joint_state)
 
         # Store joint positions relative to default pose
         obs[12:20] = current_joint_pos - self.default_pos
@@ -339,14 +348,14 @@ class DodoPolicyController(Node):
         - Gravity direction (body frame): 3
         - Joint positions (relative to default): 8
             model input order in genesis is:
-                - left_joint_1
-                - right_joint_1
-                - left_joint_2
-                - right_joint_2
-                - left_joint_3
-                - right_joint_3
-                - left_joint_4
-                - right_joint_4
+                - hip_right (hip)
+                - upper_leg_right (thigh)
+                - lower_leg_right (knee)
+                - foot_right (foot)
+                - hip_left (hip)
+                - upper_leg_left (thigh)
+                - lower_leg_left (knee)
+                - foot_left (foot)
         - Joint velocities: 8
         - Last action: 8
         - Command velocity: 3
@@ -377,36 +386,40 @@ class DodoPolicyController(Node):
         # Convert quaternion to rotation matrix (transpose for body to inertial frame)
         R_BI = self.quat_to_rot_matrix(quat_array).T
 
-        # Extract linear velocity directly from simulation
         self._lin_vel_b = np.array([
             odom.twist.twist.linear.x,
             odom.twist.twist.linear.y,
-            odom.twist.twist.linear.z
+            odom.twist.twist.linear.z,
         ])
-        #print(self._lin_vel_b)
 
-        # Simple integration to estimate velocity
-        #self._lin_vel_b = lin_acc_b * self._dt + self._lin_vel_b
-
-        # Extract angular velocity
-        ang_vel_b = np.array([
+        self._ang_vel_b = np.array([
             odom.twist.twist.angular.x,
             odom.twist.twist.angular.y,
-            odom.twist.twist.angular.z
+            odom.twist.twist.angular.z,
         ])
+
+        lin_vel_rotated = R_BI @ self._lin_vel_b
+        ang_vel_rotated = R_BI @ self._ang_vel_b
+
+        # if self._policy_counter % 10 == 0:
+        #     self._logger.info(f"lin_vel_msg     = {self._lin_vel_b}")
+        #     self._logger.info(f"lin_vel_rotated = {lin_vel_rotated}")
+        #     self._logger.info(f"ang_vel_msg     = {self._ang_vel_b}")
+        #     self._logger.info(f"ang_vel_rotated = {ang_vel_rotated}")
 
         # Calculate gravity direction in body frame
         gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
 
         # Initialize observation vector (36-dim for typical quadruped)
-        obs = np.zeros(38) if use_clock_obs else np.zeros(36)
+        obs_count = 3 + 3 + 3 + 3 + 3*len(self.joint_names_train)
+        obs = np.zeros(obs_count + 2) if use_clock_obs else np.zeros(obs_count)
 
         # Fill observation vector components:
         # Base linear velocity (3)
         obs[0:3] = self._lin_vel_b * observation_scales['lin_vel']
 
         # Base angular velocity (3)
-        obs[3:6] = ang_vel_b * observation_scales['ang_vel']
+        obs[3:6] = self._ang_vel_b * observation_scales['ang_vel']
 
         # Gravity direction (3)
         obs[6:9] = gravity_b
@@ -417,17 +430,7 @@ class DodoPolicyController(Node):
         # obs[6:9] = [0.0, 0.0, -1.0]
 
         # Map joint states from message to our ordered arrays
-        joint_pos, joint_vel = self._extract_ordered_joint_state(joint_state)
-
-        # Store joint positions 
-        obs[9:17] = (joint_pos - self.default_pos) * observation_scales['dof_pos']
-        #obs[9:17] = 0.0
-
-        # Store joint velocities
-        obs[17:25] = joint_vel * observation_scales['dof_vel']
-
-        # Store previous actions
-        obs[25:33] = self._previous_action #* observation_scales['dof_pos'] # we did not scale it again in genesis
+        joint_pos, joint_vel = self._extract_joint_state_train_order(joint_state)
 
         # Velocity commands (3)
         cmd_vel = [
@@ -435,13 +438,27 @@ class DodoPolicyController(Node):
             self._cmd_vel.linear.y * observation_scales['lin_vel'],
             self._cmd_vel.angular.z * observation_scales['ang_vel']
         ]
-        obs[33:36] = np.array(cmd_vel)
+        obs[9:12] = np.array(cmd_vel)
+        new_start_idx = 12
 
+        # Store joint positions 
+        obs[new_start_idx:new_start_idx + len(self.joint_names_train)] = (joint_pos - self.default_pos) * observation_scales['dof_pos']
+        #obs[9:17] = 0.0
+        new_start_idx += len(self.joint_names_train)
+
+        # Store joint velocities
+        obs[new_start_idx:new_start_idx + len(self.joint_names_train)] = joint_vel * observation_scales['dof_vel']
+        new_start_idx += len(self.joint_names_train)
+
+        # Store previous actions
+        obs[new_start_idx:new_start_idx + len(self.joint_names_train)] = self._previous_action #* observation_scales['dof_pos'] # we did not scale it again in genesis
+        new_start_idx += len(self.joint_names_train)
+        
         # Store clock observation (optional)
         if use_clock_obs:
             period = 1.2
             phase = (self._episode_time % period) / period
-            obs[36:38] = [
+            obs[obs_count:obs_count + 2] = [
                 np.sin(2.0 * np.pi * phase),
                 np.cos(2.0 * np.pi * phase)
             ]
@@ -452,12 +469,24 @@ class DodoPolicyController(Node):
         #     self._logger.error(f"Non-finite obs detected: {obs}")
         #     self._logger.error(f"finite mask: {np.isfinite(obs)}")
 
-        # self._logger.info(f"obs raw: {obs}")
+        #self._logger.info(f"obs raw: {obs}")
 
-        self._logger.info(f"joint_pos abs: {joint_pos}")
-        self._logger.info(f"joint_pos rel: {(joint_pos - self.default_pos)}")
+        #self._logger.info(f"joint_pos abs: {joint_pos}")
+        #self._logger.info(f"joint_pos rel: {(joint_pos - self.default_pos)}")
 
         obs = np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
+
+        if self._policy_counter % 10 == 0:
+            self._logger.info("---- POLICY DEBUG ----")
+            self._logger.info(f"cmd raw: {[self._cmd_vel.linear.x, self._cmd_vel.linear.y, self._cmd_vel.angular.z]}")
+            self._logger.info(f"lin vel obs raw: {self._lin_vel_b}")
+            self._logger.info(f"ang vel raw: {self._ang_vel_b}")
+            self._logger.info(f"gravity_b: {gravity_b}")
+            self._logger.info(f"joint_pos: {joint_pos}")
+            self._logger.info(f"joint_rel: {joint_pos - self.default_pos}")
+            self._logger.info(f"joint_vel: {joint_vel}")
+            self._logger.info(f"prev_action: {self._previous_action}")
+            self._logger.info(f"obs min/max: {obs.min():.3f}, {obs.max():.3f}")
 
         return obs
 
@@ -491,14 +520,15 @@ class DodoPolicyController(Node):
 
         # Run policy at reduced frequency (every _decimation ticks)
         if self._policy_counter % self._decimation == 0:
-            self._previous_action = self.action.copy()
             self.action = self._compute_action(obs)
-            #self.action = np.zeros(8) # TODO for testing just output zeros. Remove this line to use actual policy output.
-            self.action = np.clip(self.action, -1.5, 1.5)
+            self.action = np.clip(self.action, -10, 10)
 
-            if self._policy_counter < 20:
-                self._logger.info(f"obs[0:9]={obs[0:9]}")
-                self._logger.info(f"action={self.action}")
+        # previous_action sollte die zuletzt publizierte/gehaltene action sein
+        self._previous_action = self.action.copy()
+
+        # if self._policy_counter % 50 == 0:
+        #     self._logger.info(f"action raw/clipped: {self.action}")
+        #     self._logger.info(f"target train order: {self.action * self._action_scale + self.default_pos}")
 
         self._policy_counter += 1
 
@@ -539,10 +569,10 @@ class DodoPolicyController(Node):
             self._logger.error(f"Policy file not found: {self.policy_path}")
             self._logger.warn("Please place your trained policy at the specified path")
             # Create a dummy policy for testing
-            self.policy = lambda x: torch.zeros(1, 8)
+            self.policy = lambda x: torch.zeros(1, len(self.joint_names_train))
         except Exception as e:
             self._logger.error(f"Error loading policy: {e}")
-            self.policy = lambda x: torch.zeros(1, 8)
+            self.policy = lambda x: torch.zeros(1, len(self.joint_names_train))
 
     def _get_stamp_prefix(self) -> str:
         """Create a timestamp prefix for logging with both system and ROS time.
@@ -565,45 +595,57 @@ class DodoPolicyController(Node):
         """
         return header.stamp.sec + header.stamp.nanosec * 1e-9
     
-    def _build_joint_state_index_map(self, joint_state: JointState):
-        """Build and cache mapping from incoming JointState order to policy order."""
+    def _build_joint_remap(self, joint_state: JointState):
+        """Build and cache joint remapping between IsaacSim order and policy/train order."""
         incoming_names = tuple(joint_state.name)
 
-        # Rebuild only if the incoming joint ordering changed
         if (
-            self._joint_state_indices is not None
+            self._sim_to_train_idx is not None
+            and self._train_to_sim_idx is not None
             and incoming_names == self._joint_state_name_tuple
         ):
             return
 
-        name_to_index = {name: i for i, name in enumerate(joint_state.name)}
-
-        missing = [name for name in self.joint_names if name not in name_to_index]
-        if missing:
-            raise RuntimeError(
-                f"JointState missing required joints: {missing}. "
-                f"Received joints: {list(joint_state.name)}"
-            )
-
-        self._joint_state_indices = np.array(
-            [name_to_index[name] for name in self.joint_names],
-            dtype=np.int64
-        )
+        self.joint_names_sim = list(joint_state.name)
         self._joint_state_name_tuple = incoming_names
 
-        self._logger.info(
-            f"Built JointState remap. Incoming order: {list(joint_state.name)}"
-        )
-        self._logger.info(
-            f"Policy order: {self.joint_names}"
-        )
-        self._logger.info(
-            f"Remap indices: {self._joint_state_indices.tolist()}"
+        sim_name_to_idx = {name: i for i, name in enumerate(self.joint_names_sim)}
+        train_name_to_idx = {name: i for i, name in enumerate(self.joint_names_train)}
+
+        missing_in_sim = [name for name in self.joint_names_train if name not in sim_name_to_idx]
+        if missing_in_sim:
+            raise RuntimeError(
+                f"JointState missing train joints: {missing_in_sim}. "
+                f"Received joints: {self.joint_names_sim}"
+            )
+
+        extra_in_sim = [name for name in self.joint_names_sim if name not in train_name_to_idx]
+        if extra_in_sim:
+            raise RuntimeError(
+                f"JointState contains extra joints not used by policy: {extra_in_sim}. "
+                f"Received joints: {self.joint_names_sim}"
+            )
+
+        self._sim_to_train_idx = np.array(
+            [sim_name_to_idx[name] for name in self.joint_names_train],
+            dtype=np.int64,
         )
 
-    def _extract_ordered_joint_state(self, joint_state: JointState):
-        """Return joint pos/vel in exact policy order."""
-        self._build_joint_state_index_map(joint_state)
+        self._train_to_sim_idx = np.array(
+            [train_name_to_idx[name] for name in self.joint_names_sim],
+            dtype=np.int64,
+        )
+
+        self._logger.info(f"Built joint remap once.")
+        self._logger.info(f"Train/policy order: {self.joint_names_train}")
+        self._logger.info(f"Sim/Isaac order:   {self.joint_names_sim}")
+        self._logger.info(f"sim_to_train_idx: {self._sim_to_train_idx.tolist()}")
+        self._logger.info(f"train_to_sim_idx: {self._train_to_sim_idx.tolist()}")
+
+
+    def _extract_joint_state_train_order(self, joint_state: JointState):
+        """Return joint positions/velocities in train/policy order."""
+        self._build_joint_remap(joint_state)
 
         joint_pos_all = np.asarray(joint_state.position, dtype=np.float64)
 
@@ -612,10 +654,17 @@ class DodoPolicyController(Node):
         else:
             joint_vel_all = np.zeros(len(joint_state.name), dtype=np.float64)
 
-        joint_pos = joint_pos_all[self._joint_state_indices]
-        joint_vel = joint_vel_all[self._joint_state_indices]
+        joint_pos_train = joint_pos_all[self._sim_to_train_idx]
+        joint_vel_train = joint_vel_all[self._sim_to_train_idx]
 
-        return joint_pos, joint_vel
+        return joint_pos_train, joint_vel_train
+    
+    def _to_sim_order(self, values_train_order: np.ndarray):
+        """Convert an array from train/policy order to IsaacSim JointState order."""
+        if self._train_to_sim_idx is None:
+            raise RuntimeError("Joint remap has not been built yet.")
+
+        return np.asarray(values_train_order, dtype=np.float64)[self._train_to_sim_idx]
 
 
 def main(args=None):

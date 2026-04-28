@@ -76,9 +76,9 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'policy_path': LaunchConfiguration('policy_path'),
-            'action_scale': 0.1,
-            'decimation': 2,
-            'publish_period_ms': 5,
+            'action_scale': 0.05,
+            'decimation': 4,
+            'publish_period_ms': 20,
             'use_sim_time': True,
         }]
     )
