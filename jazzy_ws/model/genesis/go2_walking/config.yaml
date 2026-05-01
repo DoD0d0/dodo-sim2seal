@@ -1,0 +1,387 @@
+train_cfg:
+  actor:
+    activation: elu
+    class_name: MLPModel
+    distribution_cfg:
+      init_std: 0.8
+      std_type: scalar
+    hidden_dims:
+    - 512
+    - 256
+    - 128
+    obs_normalization: true
+  algorithm:
+    class_name: PPO
+    clip_param: 0.2
+    desired_kl: 0.01
+    entropy_coef: 0.01
+    gamma: 0.99
+    lam: 0.95
+    learning_rate: 0.0005
+    max_grad_norm: 1.0
+    normalize_advantage_per_mini_batch: false
+    num_learning_epochs: 5
+    num_mini_batches: 8
+    rnd_cfg: null
+    schedule: adaptive
+    share_cnn_encoders: false
+    symmetry_cfg: null
+    use_clipped_value_loss: true
+    value_loss_coef: 1.0
+  critic:
+    activation: elu
+    class_name: MLPModel
+    hidden_dims:
+    - 512
+    - 256
+    - 128
+    obs_normalization: true
+  init_member_classes: {}
+  runner:
+    checkpoint: -1
+    experiment_name: smoke_test
+    load_run: -1
+    log_wandb: true
+    logger: wandb
+    max_iterations: 3
+    num_steps_per_env: 48
+    obs_groups:
+      actor:
+      - policy
+      critic:
+      - policy
+    resume: false
+    resume_path: null
+    run_name: ''
+    save_interval: 50
+    wandb_project: dodo-birdlike-gait
+  runner_class_name: OnPolicyRunner
+  seed: 1
+  to_dict: {}
+env_cfg:
+  asset:
+    contact_height: 0.025
+    file_format: urdf
+    foot_link_names:
+    - FL_foot
+    - RL_foot
+    - FR_foot
+    - RR_foot
+    hip_abduction_indices:
+    - 0
+    - 3
+    - 6
+    - 9
+    joint_names:
+    - FL_hip_joint
+    - FL_thigh_joint
+    - FL_calf_joint
+    - FR_hip_joint
+    - FR_thigh_joint
+    - FR_calf_joint
+    - RL_hip_joint
+    - RL_thigh_joint
+    - RL_calf_joint
+    - RR_hip_joint
+    - RR_thigh_joint
+    - RR_calf_joint
+    links_to_keep: null
+    merge_fixed_links: true
+    name: go2
+    robot_file: go2.urdf
+    robot_name: go2
+  commands:
+    curriculum: true
+    max_curriculum: 1.5
+    num_commands: 3
+    ranges:
+      ang_vel_yaw:
+      - -1.0
+      - 1.0
+      lin_vel_x:
+      - -1.0
+      - 1.0
+      lin_vel_y:
+      - -0.4
+      - 0.4
+    resampling_time: 10.0
+  control:
+    action_scale: 0.25
+    control_type: P
+    damping:
+      FL_hip_joint: 0.5366563145999496
+      RL_hip_joint: 0.5366563145999496
+      FR_hip_joint: 0.5366563145999496
+      RR_hip_joint: 0.5366563145999496
+      FL_thigh_joint: 0.5366563145999496
+      RL_thigh_joint: 0.5366563145999496
+      FR_thigh_joint: 0.5366563145999496
+      RR_thigh_joint: 0.5366563145999496
+      FL_calf_joint: 0.5366563145999496
+      RL_calf_joint: 0.5366563145999496
+      FR_calf_joint: 0.5366563145999496
+      RR_calf_joint: 0.5366563145999496
+    decimation: 4
+    dof_vel_limits:
+      FL_hip_joint: 30.1
+      RL_hip_joint: 30.1
+      FR_hip_joint: 30.1
+      RR_hip_joint: 30.1
+      FL_thigh_joint: 30.1
+      RL_thigh_joint: 30.1
+      FR_thigh_joint: 30.1
+      RR_thigh_joint: 30.1
+      FL_calf_joint: 20.07
+      RL_calf_joint: 20.07
+      FR_calf_joint: 20.07
+      RR_calf_joint: 20.07
+    stiffness:
+      FL_hip_joint: 20.0
+      RL_hip_joint: 20.0
+      FR_hip_joint: 20.0
+      RR_hip_joint: 20.0
+      FL_thigh_joint: 20.0
+      RL_thigh_joint: 20.0
+      FR_thigh_joint: 20.0
+      RR_thigh_joint: 20.0
+      FL_calf_joint: 20.0
+      RL_calf_joint: 20.0
+      FR_calf_joint: 20.0
+      RR_calf_joint: 20.0
+  domain_rand:
+    added_mass_range:
+    - -0.3
+    - 0.5
+    com_shift_range:
+    - -0.03
+    - 0.03
+    friction_range:
+    - 0.5
+    - 1.3
+    kd_scale_range:
+    - 0.8
+    - 1.2
+    kp_scale_range:
+    - 0.8
+    - 1.2
+    max_push_vel_xy: 1.0
+    push_interval_s: 10.0
+    push_robots: true
+    randomize_base_mass: true
+    randomize_com: true
+    randomize_friction: true
+    randomize_kd: true
+    randomize_kp: true
+  env:
+    episode_length_s: 20.0
+    num_actions: 12
+    num_envs: 128
+    num_observations: 48
+    num_privileged_obs: null
+    play_mode: false
+    send_timeouts: true
+  init_member_classes: {}
+  init_state:
+    default_joint_angles:
+      FL_hip_joint: 0.1
+      RL_hip_joint: 0.1
+      FR_hip_joint: -0.1
+      RR_hip_joint: -0.1
+      FL_thigh_joint: 0.8
+      RL_thigh_joint: 1.0
+      FR_thigh_joint: 0.8
+      RR_thigh_joint: 1.0
+      FL_calf_joint: -1.5
+      RL_calf_joint: -1.5
+      FR_calf_joint: -1.5
+      RR_calf_joint: -1.5
+    pos:
+    - 0.0
+    - 0.0
+    - 0.35
+    rot:
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+  noise:
+    add_noise: true
+    noise_level: 1.0
+    noise_scales:
+      ang_vel: 0.2
+      dof_pos: 0.01
+      dof_vel: 1.5
+      gravity: 0.05
+      height_measurements: 0.1
+      lin_vel: 0.1
+  normalization:
+    clip_actions: 10.0
+    clip_observations: 100.0
+    obs_scales:
+      ang_vel: 0.25
+      dof_pos: 1.0
+      dof_vel: 0.05
+      height_measurements: 5.0
+      lin_vel: 2.0
+  rewards:
+    base_height_target: 0.32
+    clearance_sigma: 0.01
+    clearance_target: 0.035
+    contact_force_threshold: 8.0
+    flat_foot_sigma: 0.2
+    max_contact_force: 100.0
+    only_positive_rewards: true
+    pitch_sigma: 0.05
+    pitch_target: 0.08
+    scales:
+      action_rate: -0.01
+      ang_vel_xy: -0.0
+      base_height: -1.0
+      collision: 0.0
+      dof_acc: -2.5e-07
+      dof_pos_limits: -2.0
+      dof_vel: -0.0
+      dof_vel_limits: -0.0
+      feet_air_time: 0.0
+      feet_stumble: 0.0
+      foot_swing_clearance: 0.3
+      lin_vel_z: -0.1
+      orientation: -0.5
+      stand_still: -5.0
+      survive: 0.01
+      termination: -20.0
+      torque_limits: -1.0
+      torques: -0.0002
+      tracking_ang_vel: 0.8
+      tracking_lin_vel: 1.0
+    soft_dof_pos_limit: 0.9
+    soft_dof_vel_limit: 1.0
+    soft_torque_limit: 1.0
+    tracking_sigma: 0.175
+  seed: 1
+  sim:
+    batch_dofs_info: true
+    batch_links_info: true
+    dt: 0.005
+    enable_collision: true
+    enable_joint_limit: true
+    enable_self_collision: false
+    gravity:
+    - 0.0
+    - 0.0
+    - -9.81
+    performance_mode: true
+    substeps: 2
+    up_axis: 1
+  termination:
+    base_height_threshold: 0.22
+    pitch_threshold: 0.6108652381980153
+    roll_threshold: 0.6108652381980153
+  terrain:
+    border_flat: false
+    color:
+    - 0.18
+    - 0.18
+    - 0.21
+    curriculum: false
+    heightfield: null
+    horizontal_scale: 0.25
+    mixed:
+      options:
+      - flat_terrain
+      - random_uniform_terrain
+      - wave_terrain
+      - pyramid_sloped_terrain
+      - pyramid_stairs_terrain
+      - stepping_stones_terrain
+      - fractal_terrain
+      probs:
+      - 0.05
+      - 0.2
+      - 0.2
+      - 0.2
+      - 0.1
+      - 0.2
+      - 0.05
+    mode: plane
+    n_subterrains:
+    - 7
+    - 7
+    name: go2_training_terrain
+    options:
+    - plane
+    - flat_terrain
+    - random_uniform_terrain
+    - pyramid_sloped_terrain
+    - discrete_obstacles_terrain
+    - wave_terrain
+    - pyramid_stairs_terrain
+    - stepping_stones_terrain
+    - fractal_terrain
+    - mixed
+    pos: null
+    probs:
+    - 0.25
+    - 0.05
+    - 0.1
+    - 0.15
+    - 0.1
+    - 0.15
+    - 0.15
+    - 0.05
+    - 0.05
+    - 0.0
+    randomize: false
+    spawn_flat_radius_sub: 0
+    subterrain_size:
+    - 4.0
+    - 4.0
+    terrain_kwargs:
+      discrete_obstacles_terrain:
+        max_height: 0.05
+        max_size: 1.0
+        min_size: 0.25
+        num_rects: 5
+      flat_terrain: {}
+      fractal_terrain:
+        levels: 8
+        scale: 3.5
+      pyramid_sloped_terrain:
+        slope: 0.25
+      pyramid_stairs_terrain:
+        step_height: -0.075
+        step_width: 0.5
+      random_uniform_terrain:
+        downsampled_scale: 0.5
+        max_height: 0.05
+        min_height: -0.04
+        step: 0.01
+      stepping_stones_terrain:
+        max_height: 0.04
+        platform_size: 0.0
+        stone_distance: 0.075
+        stone_size: 0.5
+      wave_terrain:
+        amplitude: 0.06
+        num_waves: 2.0
+    vertical_scale: 0.005
+  to_dict: {}
+  viewer:
+    fov: 40
+    lookat:
+    - 0.0
+    - 0.0
+    - 0.5
+    max_fps: 60
+    pos:
+    - 2.0
+    - 0.0
+    - 2.5
+    print_debug_velocities: false
+    ref_env:
+    - 0
+    show_world_frame: true
+    velocity_arrow_radius: 0.03
+    velocity_arrow_scale: 0.6
+    visualize_foot_contacts: false
+    visualize_velocity_arrows: false
