@@ -25,9 +25,10 @@ from geometry_msgs.msg import Twist
 from sensor_msgs.msg import JointState, Imu
 from nav_msgs.msg import Odometry
 from message_filters import Subscriber, TimeSynchronizer
+from message_filters import ApproximateTimeSynchronizer
 
-USE_GENESIS = True # Set to True if you are using a policy trained in genesis, False if using a policy trained in Isaac Sim. 
-ROBOT_TYPE = "go2" # or dodo
+ROBOT_TYPE = "dodo" # or dodo
+STATE_SOURCE = "mixed"  # "imu", "odom", "mixed"
 
 class DodoPolicyController(Node):
     """PPO policy controller for Dodo quadruped robot.
@@ -64,7 +65,7 @@ class DodoPolicyController(Node):
         sim_qos_profile = rclpy.qos.QoSProfile(
             reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
             durability=rclpy.qos.DurabilityPolicy.VOLATILE,
-            history=rclpy.qos.HistoryPolicy.KEEP_LAST, # was KEEP_ALL
+            history=rclpy.qos.HistoryPolicy.KEEP_ALL, # was KEEP_ALL
             depth=5,
         )
 
@@ -82,12 +83,12 @@ class DodoPolicyController(Node):
             qos_profile=sim_qos_profile)
 
         # Setup synchronized subscribers for IMU and joint state data
-        # self._imu_sub_filter = Subscriber(
-        #     self,
-        #     Imu,
-        #     'imu',
-        #     qos_profile=sim_qos_profile,
-        # )
+        self._imu_sub_filter = Subscriber(
+            self,
+            Imu,
+            'imu',
+            qos_profile=sim_qos_profile,
+        )
         # Setup synchronized subscribers for Odometry and joint state data
         self._odom_sub_filter = Subscriber(
             self,
@@ -102,14 +103,30 @@ class DodoPolicyController(Node):
             qos_profile=sim_qos_profile,
         )
         queue_size = 10
-        #subscribers = [self._joint_states_sub_filter, self._imu_sub_filter]
-        subscribers = [self._joint_states_sub_filter, self._odom_sub_filter]
+
+        if STATE_SOURCE == "imu":
+            subscribers = [self._joint_states_sub_filter, self._imu_sub_filter]
+        elif STATE_SOURCE == "odom":
+            subscribers = [self._joint_states_sub_filter, self._odom_sub_filter]
+        elif STATE_SOURCE == "mixed":
+            subscribers = [
+                self._joint_states_sub_filter,
+                self._odom_sub_filter,
+                self._imu_sub_filter
+            ]
+
+        # Time synchronizer to ensure joint state and IMU data are processed together
+        #self.sync = TimeSynchronizer(subscribers, queue_size)
+        self.sync = ApproximateTimeSynchronizer(
+            subscribers,
+            queue_size=20,
+            slop=0.02,
+        )
+
+        self.sync.registerCallback(self._tick)
 
         self._episode_time = 0.0  # Track episode time for optional clock observation
 
-        # Time synchronizer to ensure joint state and IMU data are processed together
-        self.sync = TimeSynchronizer(subscribers, queue_size)
-        self.sync.registerCallback(self._tick)
 
         # Load neural network policy
         self.policy_path = self.get_parameter('policy_path').value
@@ -126,7 +143,7 @@ class DodoPolicyController(Node):
         self._dt = 0.0  # Time delta between ticks
 
         # set up initial cmd velocity for testing
-        self._cmd_vel.linear.x = 0.5
+        self._cmd_vel.linear.x = 0.2
         self._cmd_vel.linear.y = 0.0
         self._cmd_vel.angular.z = 0.0
 
@@ -134,13 +151,13 @@ class DodoPolicyController(Node):
         # Currently set to zeros - should be updated based on your trained policy
         self.default_pos = np.array([
             0.0, # hip_right (hip)
-            0.45, # upper_leg_right (thigh)
+            0.43, # upper_leg_right (thigh)
             -1.0, # lower_leg_right (knee)
-            0.0, # foot_right (foot)
-            0.55, # hip_left (hip)
-            0.45, # upper_leg_left (thigh)
+            0.57, # foot_right (foot)
+            0.0, # hip_left (hip)   
+            0.43, # upper_leg_left (thigh)
             -1.0, # lower_leg_left (knee)
-            0.55  # foot_left (foot)
+            0.57  # foot_left (foot)
         ]) if ROBOT_TYPE == "dodo" else np.array([
             0.1, # FL_hip_joint
             0.8, # FL_thigh_joint
@@ -200,7 +217,7 @@ class DodoPolicyController(Node):
         """Store the latest velocity command."""
         self._cmd_vel = msg
 
-    def _tick(self, joint_state: JointState, odom: Odometry):
+    def _tick(self, joint_state: JointState, *state_msgs):
         """Process synchronized joint state and IMU data to generate robot commands.
 
         This method is called whenever new joint state and IMU data are available.
@@ -210,6 +227,17 @@ class DodoPolicyController(Node):
             joint_state: Current joint positions and velocities
             imu: Current IMU data (orientation, angular velocity, acceleration)
         """
+        imu = None
+        odom = None
+
+        if STATE_SOURCE == "imu":
+            imu = state_msgs[0]
+        elif STATE_SOURCE == "odom":
+            odom = state_msgs[0]
+        elif STATE_SOURCE == "mixed":
+            odom = state_msgs[0]
+            imu = state_msgs[1]
+    
         # Reset if time jumped backwards (most likely due to sim time reset)
         now = self.get_clock().now().nanoseconds * 1e-9
         if now < self._last_tick_time:
@@ -229,7 +257,7 @@ class DodoPolicyController(Node):
         self._episode_time += self._dt
 
         # Run the control policy
-        self.forward(joint_state, odom)
+        self.forward(joint_state, odom, imu)
 
         # Prepare and publish the joint command message
         self._joint_command.header.stamp = self.get_clock().now().to_msg()
@@ -248,91 +276,7 @@ class DodoPolicyController(Node):
 
         self._joint_publisher.publish(self._joint_command)
 
-    def _compute_observation(self, joint_state: JointState, imu: Imu):
-        """Compute the policy observation vector from robot state.
-
-        TODO: Update observation dimensions based on your PPO training configuration.
-        Current structure follows a typical quadruped observation space:
-        - Linear velocity (body frame): 3
-        - Angular velocity (body frame): 3
-        - Gravity direction (body frame): 3
-        - Command velocity: 3
-        - Joint positions (relative to default): 8
-        - Joint velocities: 8
-        - Previous action: 8
-        Total: 36 dimensions
-
-        Args:
-            joint_state: Current joint positions and velocities
-            imu: Current IMU data
-
-        Returns:
-            np.ndarray: Observation vector for the policy
-        """
-        # Extract quaternion orientation from IMU
-        quat_I = imu.orientation
-        quat_array = np.array([quat_I.w, quat_I.x, quat_I.y, quat_I.z])
-
-        # Convert quaternion to rotation matrix (transpose for body to inertial frame)
-        R_BI = self.quat_to_rot_matrix(quat_array).T
-
-        # Extract linear acceleration and integrate to estimate velocity
-        lin_acc_b = np.array([
-            imu.linear_acceleration.x,
-            imu.linear_acceleration.y,
-            imu.linear_acceleration.z
-        ])
-
-        # Simple integration to estimate velocity
-        self._lin_vel_b = lin_acc_b * self._dt + self._lin_vel_b
-
-        # Extract angular velocity
-        ang_vel_b = np.array([
-            imu.angular_velocity.x,
-            imu.angular_velocity.y,
-            imu.angular_velocity.z
-        ])
-
-        # Calculate gravity direction in body frame
-        gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
-
-        # Initialize observation vector (36-dim for typical quadruped)
-        obs = np.zeros(36)
-
-        # Fill observation vector components:
-        # Base linear velocity (3)
-        obs[:3] = self._lin_vel_b
-        #obs[0:3] = np.zeros(3) # For testing without velocity feedback, set linear velocity to zero. Remove this line to use actual velocity from IMU.
-
-        # Base angular velocity (3)
-        obs[3:6] = ang_vel_b
-
-        # Gravity direction (3)
-        obs[6:9] = gravity_b
-
-        # Velocity commands (3)
-        cmd_vel = [
-            self._cmd_vel.linear.x,
-            self._cmd_vel.linear.y,
-            self._cmd_vel.angular.z
-        ]
-        obs[9:12] = np.array(cmd_vel)
-
-        # Map joint states from message to our ordered arrays
-        current_joint_pos, current_joint_vel = self._extract_joint_state_train_order(joint_state)
-
-        # Store joint positions relative to default pose
-        obs[12:20] = current_joint_pos - self.default_pos
-
-        # Store joint velocities
-        obs[20:28] = current_joint_vel
-
-        # Store previous actions
-        obs[28:36] = self._previous_action
-
-        return obs
-    
-    def _compute_observation_genesis(self, joint_state: JointState, odom: Odometry):
+    def _compute_observation(self, joint_state: JointState, odom: Odometry, imu: Imu):
         """Compute the policy observation vector from robot state.
         
         => Observations differ between policies trained in isaacsim and genesis.
@@ -373,33 +317,70 @@ class DodoPolicyController(Node):
         use_clock_obs = False # Set to True if you included a clock observation in your training
 
         observation_scales = { # TODO use the scales that you used during training for consistency.
-            'ang_vel': 0.25,  # Scale angular velocity if needed
+            'ang_vel': 1.0,  # Scale angular velocity if needed
             'dof_pos': 1.0,  # Scale joint positions if needed
-            'dof_vel': 0.05,  # Scale joint velocities if needed
-            'lin_vel': 2.0,  # Scale command velocities if needed
+            'dof_vel': 1.0,  # Scale joint velocities if needed
+            'lin_vel': 1.0,  # Scale command velocities if needed
         }
 
         # Extract quaternion orientation from Odeometry
-        quat_I = odom.pose.pose.orientation
+        if STATE_SOURCE == "imu":
+            quat_I = imu.orientation
+
+            lin_acc_b = np.array([
+                imu.linear_acceleration.x,
+                imu.linear_acceleration.y,
+                imu.linear_acceleration.z
+            ])
+            self._lin_vel_b = lin_acc_b * self._dt + self._lin_vel_b
+
+            self._ang_vel_b = np.array([
+                imu.angular_velocity.x,
+                imu.angular_velocity.y,
+                imu.angular_velocity.z
+            ])
+
+        elif STATE_SOURCE == "odom":
+            quat_I = odom.pose.pose.orientation
+
+            self._lin_vel_b = np.array([
+                odom.twist.twist.linear.x,
+                odom.twist.twist.linear.y,
+                odom.twist.twist.linear.z,
+            ])
+
+            self._ang_vel_b = np.array([
+                odom.twist.twist.angular.x,
+                odom.twist.twist.angular.y,
+                odom.twist.twist.angular.z,
+            ])
+
+        elif STATE_SOURCE == "mixed":
+            quat_I = imu.orientation  
+
+            # velocities from odometry, orientation from IMU
+            self._lin_vel_b = np.array([
+                odom.twist.twist.linear.x,
+                odom.twist.twist.linear.y,
+                odom.twist.twist.linear.z,
+            ])
+
+            self._ang_vel_b = np.array([
+                odom.twist.twist.angular.x,
+                odom.twist.twist.angular.y,
+                odom.twist.twist.angular.z,
+            ])
+
         quat_array = np.array([quat_I.w, quat_I.x, quat_I.y, quat_I.z])
 
         # Convert quaternion to rotation matrix (transpose for body to inertial frame)
         R_BI = self.quat_to_rot_matrix(quat_array).T
 
-        self._lin_vel_b = np.array([
-            odom.twist.twist.linear.x,
-            odom.twist.twist.linear.y,
-            odom.twist.twist.linear.z,
-        ])
-
-        self._ang_vel_b = np.array([
-            odom.twist.twist.angular.x,
-            odom.twist.twist.angular.y,
-            odom.twist.twist.angular.z,
-        ])
-
         lin_vel_rotated = R_BI @ self._lin_vel_b
         ang_vel_rotated = R_BI @ self._ang_vel_b
+
+        #self._lin_vel_b = lin_vel_rotated
+        #self._ang_vel_b = ang_vel_rotated
 
         # if self._policy_counter % 10 == 0:
         #     self._logger.info(f"lin_vel_msg     = {self._lin_vel_b}")
@@ -422,7 +403,7 @@ class DodoPolicyController(Node):
         obs[3:6] = self._ang_vel_b * observation_scales['ang_vel']
 
         # Gravity direction (3)
-        obs[6:9] = gravity_b
+        obs[6:9] = gravity_b 
 
 
         # obs[0:3] = 0.0
@@ -507,7 +488,7 @@ class DodoPolicyController(Node):
             action = self.policy(obs).detach().view(-1).numpy()
         return action
 
-    def forward(self, joint_state: JointState, odom: Odometry):
+    def forward(self, joint_state: JointState, odom: Odometry, imu: Imu):
         """Process sensor data and compute control actions.
 
         This combines observation computation and policy evaluation.
@@ -516,9 +497,10 @@ class DodoPolicyController(Node):
         Args:
             joint_state: Current joint positions and velocities
             odom: Current odometry data
+            imu: Current IMU data
         """
         # Compute observation from current state
-        obs = self._compute_observation(joint_state, odom) if not USE_GENESIS else self._compute_observation_genesis(joint_state, odom)
+        obs = self._compute_observation(joint_state, odom, imu)
 
         # Run policy at reduced frequency (every _decimation ticks)
         if self._policy_counter % self._decimation == 0:
