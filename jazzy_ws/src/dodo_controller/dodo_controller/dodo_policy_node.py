@@ -27,8 +27,8 @@ from nav_msgs.msg import Odometry
 from message_filters import Subscriber, TimeSynchronizer
 from message_filters import ApproximateTimeSynchronizer
 
-ROBOT_TYPE = "dodo" # or dodo
-STATE_SOURCE = "mixed"  # "imu", "odom", "mixed"
+ROBOT_TYPE = "dodo" # go2 or dodo
+STATE_SOURCE = "odom"  # "imu", "odom", "mixed"
 
 class DodoPolicyController(Node):
     """PPO policy controller for Dodo quadruped robot.
@@ -65,8 +65,8 @@ class DodoPolicyController(Node):
         sim_qos_profile = rclpy.qos.QoSProfile(
             reliability=rclpy.qos.ReliabilityPolicy.RELIABLE,
             durability=rclpy.qos.DurabilityPolicy.VOLATILE,
-            history=rclpy.qos.HistoryPolicy.KEEP_ALL, # was KEEP_ALL
-            depth=5,
+            history=rclpy.qos.HistoryPolicy.KEEP_LAST, # was KEEP_ALL
+            depth=10,
         )
 
         # Create subscription for velocity commands
@@ -119,18 +119,13 @@ class DodoPolicyController(Node):
         #self.sync = TimeSynchronizer(subscribers, queue_size)
         self.sync = ApproximateTimeSynchronizer(
             subscribers,
-            queue_size=20,
-            slop=0.02,
+            queue_size=queue_size,
+            slop=0.005,
         )
 
         self.sync.registerCallback(self._tick)
 
         self._episode_time = 0.0  # Track episode time for optional clock observation
-
-
-        # Load neural network policy
-        self.policy_path = self.get_parameter('policy_path').value
-        self.load_policy()
 
         # Initialize state variables
         self._joint_state = JointState()
@@ -202,6 +197,10 @@ class DodoPolicyController(Node):
         self._previous_action = np.zeros(len(self.joint_names_train))
         self.action = np.zeros(len(self.joint_names_train))
 
+        # Load neural network policy
+        self.policy_path = self.get_parameter('policy_path').value
+        self.load_policy()
+
         self.joint_names_sim = None
 
         self._sim_to_train_idx = None   # read JointState in train/policy order
@@ -257,7 +256,12 @@ class DodoPolicyController(Node):
         self._episode_time += self._dt
 
         # Run the control policy
-        self.forward(joint_state, odom, imu)
+        if self._episode_time < 0.1:
+            self.forward(joint_state, odom, imu)
+            self.action[:] = 0.0
+        else:
+            self.forward(joint_state, odom, imu)
+        #self.forward(joint_state, odom, imu)
 
         # Prepare and publish the joint command message
         self._joint_command.header.stamp = self.get_clock().now().to_msg()
@@ -271,10 +275,13 @@ class DodoPolicyController(Node):
 
         self._joint_command.name = self.joint_names_sim
         self._joint_command.position = target_pos_sim.tolist()
-        self._joint_command.velocity = np.zeros(len(self.joint_names_sim)).tolist()
-        self._joint_command.effort = np.zeros(len(self.joint_names_sim)).tolist()
+        self._joint_command.velocity = []
+        self._joint_command.effort = []
 
         self._joint_publisher.publish(self._joint_command)
+
+        #if self._policy_counter % 50 == 0:
+        #    self._logger.info(f"tick dt={self._dt:.5f}, policy_freq≈{1.0/(self._dt*self._decimation):.1f} Hz")
 
     def _compute_observation(self, joint_state: JointState, odom: Odometry, imu: Imu):
         """Compute the policy observation vector from robot state.
@@ -324,72 +331,50 @@ class DodoPolicyController(Node):
         }
 
         # Extract quaternion orientation from Odeometry
-        if STATE_SOURCE == "imu":
-            quat_I = imu.orientation
-
-            lin_acc_b = np.array([
-                imu.linear_acceleration.x,
-                imu.linear_acceleration.y,
-                imu.linear_acceleration.z
-            ])
-            self._lin_vel_b = lin_acc_b * self._dt + self._lin_vel_b
-
-            self._ang_vel_b = np.array([
-                imu.angular_velocity.x,
-                imu.angular_velocity.y,
-                imu.angular_velocity.z
-            ])
-
-        elif STATE_SOURCE == "odom":
+        if STATE_SOURCE == "odom":
             quat_I = odom.pose.pose.orientation
 
-            self._lin_vel_b = np.array([
+            lin_vel_obs = np.array([
                 odom.twist.twist.linear.x,
                 odom.twist.twist.linear.y,
                 odom.twist.twist.linear.z,
             ])
 
-            self._ang_vel_b = np.array([
+            ang_vel_obs = np.array([
                 odom.twist.twist.angular.x,
                 odom.twist.twist.angular.y,
                 odom.twist.twist.angular.z,
             ])
 
         elif STATE_SOURCE == "mixed":
-            quat_I = imu.orientation  
+            quat_I = imu.orientation
 
-            # velocities from odometry, orientation from IMU
-            self._lin_vel_b = np.array([
+            lin_vel_obs = np.array([
                 odom.twist.twist.linear.x,
                 odom.twist.twist.linear.y,
                 odom.twist.twist.linear.z,
             ])
 
-            self._ang_vel_b = np.array([
+            ang_vel_obs = np.array([
                 odom.twist.twist.angular.x,
                 odom.twist.twist.angular.y,
                 odom.twist.twist.angular.z,
             ])
 
+        elif STATE_SOURCE == "imu":
+            quat_I = imu.orientation
+
+            lin_vel_obs = np.zeros(3)  # besser als integrierte IMU-Acceleration
+            ang_vel_obs = np.array([
+                imu.angular_velocity.x,
+                imu.angular_velocity.y,
+                imu.angular_velocity.z,
+            ])
+
         quat_array = np.array([quat_I.w, quat_I.x, quat_I.y, quat_I.z])
-
-        # Convert quaternion to rotation matrix (transpose for body to inertial frame)
         R_BI = self.quat_to_rot_matrix(quat_array).T
-
-        lin_vel_rotated = R_BI @ self._lin_vel_b
-        ang_vel_rotated = R_BI @ self._ang_vel_b
-
-        #self._lin_vel_b = lin_vel_rotated
-        #self._ang_vel_b = ang_vel_rotated
-
-        # if self._policy_counter % 10 == 0:
-        #     self._logger.info(f"lin_vel_msg     = {self._lin_vel_b}")
-        #     self._logger.info(f"lin_vel_rotated = {lin_vel_rotated}")
-        #     self._logger.info(f"ang_vel_msg     = {self._ang_vel_b}")
-        #     self._logger.info(f"ang_vel_rotated = {ang_vel_rotated}")
-
         # Calculate gravity direction in body frame
-        gravity_b = np.matmul(R_BI, np.array([0.0, 0.0, -1.0]))
+        gravity_b = R_BI @ np.array([0.0, 0.0, -1.0])
 
         # Initialize observation vector (36-dim for typical quadruped)
         obs_count = 3 + 3 + 3 + 3 + 3*len(self.joint_names_train)
@@ -397,18 +382,13 @@ class DodoPolicyController(Node):
 
         # Fill observation vector components:
         # Base linear velocity (3)
-        obs[0:3] = self._lin_vel_b * observation_scales['lin_vel']
-
+        obs[0:3] = lin_vel_obs * observation_scales["lin_vel"]
+        
         # Base angular velocity (3)
-        obs[3:6] = self._ang_vel_b * observation_scales['ang_vel']
+        obs[3:6] = ang_vel_obs * observation_scales["ang_vel"]
 
         # Gravity direction (3)
         obs[6:9] = gravity_b 
-
-
-        # obs[0:3] = 0.0
-        # obs[3:6] = 0.0
-        # obs[6:9] = [0.0, 0.0, -1.0]
 
         # Map joint states from message to our ordered arrays
         joint_pos, joint_vel = self._extract_joint_state_train_order(joint_state)
@@ -444,32 +424,15 @@ class DodoPolicyController(Node):
                 np.cos(2.0 * np.pi * phase)
             ]
 
-        
-        # #self._logger.info(f"Computed observation: {obs}")
-        # if not np.isfinite(obs).all():
-        #     self._logger.error(f"Non-finite obs detected: {obs}")
-        #     self._logger.error(f"finite mask: {np.isfinite(obs)}")
-
-        #self._logger.info(f"obs raw: {obs}")
-
-        #self._logger.info(f"joint_pos abs: {joint_pos}")
-        #self._logger.info(f"joint_pos rel: {(joint_pos - self.default_pos)}")
-
         obs = np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # if self._policy_counter % 25 == 0:
-        #     self._logger.info("---- POLICY DEBUG ----")
-        #     self._logger.info(f"cmd raw: {[self._cmd_vel.linear.x, self._cmd_vel.linear.y, self._cmd_vel.angular.z]}")
-        #     self._logger.info(f"lin vel obs raw: {self._lin_vel_b}")
-        #     self._logger.info(f"lin vel obs rotated: {lin_vel_rotated}")
-        #     self._logger.info(f"ang vel raw: {self._ang_vel_b}")
-        #     self._logger.info(f"ang vel obs rotated: {ang_vel_rotated}")
-        #     self._logger.info(f"gravity_b: {gravity_b}")
-        #     self._logger.info(f"joint_pos: {joint_pos}")
-        #     self._logger.info(f"joint_rel: {joint_pos - self.default_pos}")
-        #     self._logger.info(f"joint_vel: {joint_vel}")
-        #     self._logger.info(f"prev_action: {self._previous_action}")
-        #     self._logger.info(f"obs min/max: {obs.min():.3f}, {obs.max():.3f}")
+        if self._policy_counter % 50 == 0:
+            self._logger.info(f"cmd: {[self._cmd_vel.linear.x, self._cmd_vel.linear.y, self._cmd_vel.angular.z]}")
+            self._logger.info(f"lin_vel_obs: {lin_vel_obs}")
+            self._logger.info(f"ang_vel_obs: {ang_vel_obs}")
+            self._logger.info(f"gravity_b: {gravity_b}")
+            self._logger.info(f"joint_rel min/max: {(joint_pos - self.default_pos).min():.3f}, {(joint_pos - self.default_pos).max():.3f}")
+            self._logger.info(f"action min/max: {self.action.min():.3f}, {self.action.max():.3f}")
 
         return obs
 
@@ -556,7 +519,7 @@ class DodoPolicyController(Node):
             self.policy = lambda x: torch.zeros(1, len(self.joint_names_train))
         except Exception as e:
             self._logger.error(f"Error loading policy: {e}")
-            self.policy = lambda x: torch.zeros(1, len(self.joint_names_train))
+            raise
 
     def _get_stamp_prefix(self) -> str:
         """Create a timestamp prefix for logging with both system and ROS time.
